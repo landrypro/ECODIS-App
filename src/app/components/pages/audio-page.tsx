@@ -1,77 +1,48 @@
-import { Search } from "lucide-react";
-import { useState } from "react";
+import { Search, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import { MessageCard } from "../message-card";
 import { CategoryChips } from "../category-chip";
+import { fetchMessages, fetchCommentCounts, Message } from "../api";
+import { useAuth } from "../auth-context";
 
-const categories = ["Tout", "Prédications", "Enseignements", "Louanges", "Témoignages"];
-
-const audioMessages = [
-  {
-    id: 1,
-    title: "La puissance de la prière dans la vie du disciple",
-    author: "Pasteur Jean",
-    date: "27 Fév 2026",
-    duration: "45:30",
-    category: "Prédications",
-  },
-  {
-    id: 2,
-    title: "Comment étudier la Bible efficacement",
-    author: "Pasteur Marie",
-    date: "25 Fév 2026",
-    duration: "32:15",
-    category: "Enseignements",
-  },
-  {
-    id: 3,
-    title: "Louange et adoration : une arme spirituelle",
-    author: "Frère David",
-    date: "23 Fév 2026",
-    duration: "28:45",
-    category: "Louanges",
-  },
-  {
-    id: 4,
-    title: "Mon témoignage de conversion",
-    author: "Soeur Ruth",
-    date: "20 Fév 2026",
-    duration: "18:20",
-    category: "Témoignages",
-  },
-  {
-    id: 5,
-    title: "La foi qui déplace les montagnes",
-    author: "Pasteur Jean",
-    date: "18 Fév 2026",
-    duration: "52:10",
-    category: "Prédications",
-  },
-  {
-    id: 6,
-    title: "Les dons du Saint-Esprit",
-    author: "Pasteur Esther",
-    date: "15 Fév 2026",
-    duration: "40:05",
-    category: "Enseignements",
-  },
+const categories = [
+  "Tout",
+  "Predications",
+  "Enseignements",
+  "Louanges",
+  "Temoignages",
 ];
 
 export function AudioPage() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Tout");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const navigate = useNavigate();
+  const { favorites } = useAuth();
 
-  const filtered = audioMessages.filter((msg) => {
+  useEffect(() => {
+    Promise.all([fetchMessages("audio"), fetchCommentCounts()]).then(([msgs, counts]) => {
+      setMessages(msgs);
+      setCommentCounts(counts);
+      setLoading(false);
+    });
+  }, []);
+
+  const filtered = messages.filter((msg) => {
     const matchSearch =
       msg.title.toLowerCase().includes(search.toLowerCase()) ||
       msg.author.toLowerCase().includes(search.toLowerCase());
-    const matchCategory = selectedCategory === "Tout" || msg.category === selectedCategory;
+    const matchCategory =
+      selectedCategory === "Tout" || msg.category === selectedCategory;
     return matchSearch && matchCategory;
   });
 
   return (
-    <div className="pb-20">
-      <div className="px-4 pt-4">
-        {/* Search */}
+    <div className="pb-20 lg:pb-6">
+      <div className="px-4 lg:px-6 pt-4">
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
@@ -83,31 +54,48 @@ export function AudioPage() {
           />
         </div>
 
-        {/* Categories */}
         <CategoryChips categories={categories} onSelect={setSelectedCategory} />
 
-        {/* Count */}
         <p className="text-[12px] text-muted-foreground mt-4 mb-3">
           {filtered.length} message{filtered.length > 1 ? "s" : ""} audio
         </p>
 
-        {/* List */}
-        <div className="space-y-4">
-          {filtered.map((msg) => (
-            <MessageCard
-              key={msg.id}
-              type="audio"
-              title={msg.title}
-              author={msg.author}
-              date={msg.date}
-              duration={msg.duration}
-            />
-          ))}
-        </div>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="w-6 h-6 text-primary animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filtered.map((msg) => (
+              <div
+                key={msg.id}
+                onClick={() => navigate(`/message/${msg.id}`)}
+                className="cursor-pointer"
+              >
+                <MessageCard
+                  type="audio"
+                  title={msg.title}
+                  author={msg.author}
+                  date={new Date(msg.createdAt).toLocaleDateString("fr-FR", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                  duration={msg.duration}
+                  liked={favorites.includes(msg.id)}
+                  messageId={msg.id}
+                  commentCount={commentCounts[msg.id] || 0}
+                />
+              </div>
+            ))}
+          </div>
+        )}
 
-        {filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-muted-foreground text-[14px]">Aucun message trouvé</p>
+            <p className="text-muted-foreground text-[14px]">
+              Aucun message trouve
+            </p>
           </div>
         )}
       </div>

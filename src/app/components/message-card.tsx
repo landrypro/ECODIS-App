@@ -1,6 +1,9 @@
-import { Play, Pause, Clock, Heart, Share2, MoreVertical } from "lucide-react";
+import { Play, Pause, Clock, Heart, Share2, MoreVertical, MessageCircle, WifiOff } from "lucide-react";
 import { useState } from "react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { useAuth } from "./auth-context";
+import { useDownloads } from "./download-context";
+import { toggleFavorite } from "./api";
 
 interface MessageCardProps {
   type: "audio" | "video" | "text";
@@ -11,6 +14,8 @@ interface MessageCardProps {
   description?: string;
   thumbnail?: string;
   liked?: boolean;
+  messageId?: string;
+  commentCount?: number;
 }
 
 export function MessageCard({
@@ -22,12 +27,46 @@ export function MessageCard({
   description,
   thumbnail,
   liked = false,
+  messageId,
+  commentCount = 0,
 }: MessageCardProps) {
   const [isLiked, setIsLiked] = useState(liked);
   const [isPlaying, setIsPlaying] = useState(false);
+  const { accessToken, setFavorites } = useAuth();
+  const { isDownloaded } = useDownloads();
+
+  const downloaded = messageId ? isDownloaded(messageId) : false;
+
+  const handleLike = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!accessToken || !messageId) return;
+    const result = await toggleFavorite(messageId, accessToken);
+    setIsLiked(result);
+    setFavorites((prev: string[]) =>
+      result
+        ? [...prev, messageId]
+        : prev.filter((id: string) => id !== messageId)
+    );
+  };
+
+  const handlePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (navigator.share) {
+      navigator.share({
+        title,
+        text: `${title} - ${author} | ECODIS`,
+        url: window.location.href,
+      });
+    }
+  };
 
   return (
-    <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+    <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-shadow">
       {type === "video" && thumbnail && (
         <div className="relative aspect-video bg-muted">
           <ImageWithFallback
@@ -37,7 +76,7 @@ export function MessageCard({
           />
           <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
             <button
-              onClick={() => setIsPlaying(!isPlaying)}
+              onClick={handlePlay}
               className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg"
             >
               {isPlaying ? (
@@ -52,6 +91,12 @@ export function MessageCard({
               {duration}
             </span>
           )}
+          {downloaded && (
+            <span className="absolute top-2 left-2 flex items-center gap-1 bg-emerald-500/90 text-white text-[10px] px-2 py-0.5 rounded-full">
+              <WifiOff className="w-2.5 h-2.5" />
+              Hors-ligne
+            </span>
+          )}
         </div>
       )}
 
@@ -59,7 +104,7 @@ export function MessageCard({
         <div className="px-4 pt-4">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setIsPlaying(!isPlaying)}
+              onClick={handlePlay}
               className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0"
             >
               {isPlaying ? (
@@ -101,6 +146,12 @@ export function MessageCard({
             <Clock className="w-3 h-3" />
             {date}
           </span>
+          {downloaded && (
+            <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+              <WifiOff className="w-2.5 h-2.5" />
+              Hors-ligne
+            </span>
+          )}
         </div>
 
         {type === "text" && description && (
@@ -111,20 +162,28 @@ export function MessageCard({
 
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
           <button
-            onClick={() => setIsLiked(!isLiked)}
+            onClick={handleLike}
             className="flex items-center gap-1.5 text-muted-foreground hover:text-red-500 transition-colors"
           >
             <Heart
-              className={`w-4 h-4 ${isLiked ? "fill-red-500 text-red-500" : ""}`}
+              className={`w-4 h-4 ${
+                isLiked ? "fill-red-500 text-red-500" : ""
+              }`}
             />
-            <span className="text-[11px]">J'aime</span>
+            <span className="text-[11px]">
+              {isLiked ? "Favori" : "J'aime"}
+            </span>
           </button>
-          <button className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <MessageCircle className="w-4 h-4" />
+            <span className="text-[11px]">{commentCount}</span>
+          </div>
+          <button
+            onClick={handleShare}
+            className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors"
+          >
             <Share2 className="w-4 h-4" />
             <span className="text-[11px]">Partager</span>
-          </button>
-          <button className="text-muted-foreground hover:text-primary transition-colors">
-            <MoreVertical className="w-4 h-4" />
           </button>
         </div>
       </div>
