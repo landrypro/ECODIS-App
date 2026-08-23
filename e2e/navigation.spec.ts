@@ -26,6 +26,22 @@ test("connexion : le formulaire est accessible", async ({ page }) => {
   await expect(page.getByPlaceholder("Votre mot de passe")).toBeVisible();
 });
 
+test("connexion : le lien de recuperation ouvre la demande de reinitialisation", async ({ page }) => {
+  await page.goto("/login");
+
+  await page.getByRole("link", { name: "Mot de passe oublie ?" }).click();
+  await expect(page).toHaveURL(/\/forgot-password$/);
+  await expect(page.getByText("Mot de passe oublie", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Envoyer le lien" })).toBeVisible();
+});
+
+test("reinitialisation : un lien sans session est refuse", async ({ page }) => {
+  await page.goto("/reset-password");
+
+  await expect(page.getByText("Ce lien est invalide ou expire. Demandez un nouveau lien de reinitialisation.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Demander un nouveau lien" })).toBeVisible();
+});
+
 test("inscription : le lien vers la connexion fonctionne", async ({ page }) => {
   await page.goto("/signup");
 

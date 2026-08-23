@@ -12,5 +12,22 @@ major_version = 17
 
 [auth]
 enabled = true
-site_url = "http://localhost:5173"
-additional_redirect_urls = ["http://127.0.0.1:4173"]
+site_url = "https://ecodis-app-six.vercel.app"
+additional_redirect_urls = [
+  "https://ecodis-app-six.vercel.app/reset-password",
+  "https://ecodis-app-gaius-team.vercel.app/reset-password",
+  "http://localhost:5173/reset-password",
+  "http://127.0.0.1:4173/reset-password",
+]
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+max_frequency = "1m0s"
+otp_length = 8
+otp_expiry = 3600

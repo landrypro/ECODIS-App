@@ -7,6 +7,8 @@ import { TextesPage } from "./components/pages/textes-page";
 import { ProfilPage } from "./components/pages/profil-page";
 import { LoginPage } from "./components/pages/login-page";
 import { SignupPage } from "./components/pages/signup-page";
+import { ForgotPasswordPage } from "./components/pages/forgot-password-page";
+import { ResetPasswordPage } from "./components/pages/reset-password-page";
 import { DetailPage } from "./components/pages/detail-page";
 import { AdminPage } from "./components/pages/admin-page";
 import { AdminUsersPage } from "./components/pages/admin-users-page";
@@ -32,6 +34,8 @@ export const router = createBrowserRouter([
   },
   { path: "/login", Component: LoginPage },
   { path: "/signup", Component: SignupPage },
+  { path: "/forgot-password", Component: ForgotPasswordPage },
+  { path: "/reset-password", Component: ResetPasswordPage },
   { path: "/message/:id", Component: DetailPage },
   { path: "/admin", Component: AdminPage },
   { path: "/admin/users", Component: AdminUsersPage },

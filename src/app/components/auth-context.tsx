@@ -16,6 +16,8 @@ interface AuthContextType {
   permissions: string[];
   isAdmin: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  resetPassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshFavorites: () => Promise<void>;
   refreshRole: () => Promise<void>;
@@ -33,6 +35,8 @@ const AuthContext = createContext<AuthContextType>({
   permissions: [],
   isAdmin: false,
   signIn: async () => {},
+  requestPasswordReset: async () => {},
+  resetPassword: async () => {},
   signOut: async () => {},
   refreshFavorites: async () => {},
   refreshRole: async () => {},
@@ -104,6 +108,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   };
 
+  const requestPasswordReset = async (email: string) => {
+    const redirectTo = new URL("/reset-password", window.location.origin).toString();
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo });
+    if (error) throw error;
+  };
+
+  const resetPassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+    const { error: signOutError } = await supabase.auth.signOut({ scope: "global" });
+    if (signOutError) console.error("Global sign out after password reset failed:", signOutError);
+    setSession(null);
+    setUser(null);
+    setFavorites([]);
+    setRole("user");
+    setRoles(["user"]);
+    setPermissions([]);
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setSession(null);
@@ -127,6 +150,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         permissions,
         isAdmin,
         signIn,
+        requestPasswordReset,
+        resetPassword,
         signOut,
         refreshFavorites,
         refreshRole,
