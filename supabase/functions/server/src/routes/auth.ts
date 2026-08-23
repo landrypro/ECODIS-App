@@ -32,6 +32,13 @@ authRoutes.post("/auth/signup", async (c) => {
     });
     if (error) return c.json({ error: `Signup error: ${error.message}` }, 400);
 
+    // Lorsque la confirmation d'email est active, Supabase masque un compte
+    // déjà confirmé en renvoyant un utilisateur obfusqué sans identité.
+    // Ne jamais provisionner cet identifiant factice dans les tables métier.
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      throw new ValidationError("Un compte avec cet email existe deja.", 409);
+    }
+
     const authorization = data.user ? await ensureUserRoleRecord(data.user, validatedName) : null;
     return c.json({
       user: data.user,
