@@ -39,6 +39,12 @@ export function requiresMfaStepUp(isAdmin: boolean, state: MfaState): boolean {
   return isAdmin && !state.isLoading && state.currentLevel !== "aal2";
 }
 
+export function shouldBlockMfaChallenge(isAdmin: boolean, state: MfaState, pathname: string): boolean {
+  return requiresMfaStepUp(isAdmin, state)
+    && getVerifiedMfaFactors(state.factors).length > 0
+    && pathname !== "/security/mfa";
+}
+
 export function canRemoveMfaFactor(factors: MfaFactor[], factorId: string): boolean {
   const factor = factors.find((item) => item.id === factorId);
   return Boolean(factor && isVerifiedMfaFactor(factor) && getVerifiedMfaFactors(factors).length > 1);

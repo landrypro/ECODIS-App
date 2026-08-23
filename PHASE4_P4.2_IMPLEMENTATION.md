@@ -1,6 +1,6 @@
 # ECODIS App — P4.2 : rôles et permissions
 
-**Statut :** implémentée localement — recette consolidée prévue à la fin de la Phase 4.
+**Statut :** implémentée localement, y compris le parcours MFA administrateur — recette consolidée prévue à la fin de la Phase 4.
 
 ## Modèle livré
 
@@ -33,12 +33,30 @@ APP_BOOTSTRAP_SUPER_ADMIN_EMAILS=adresse-admin-principale@exemple.org
 
 Le titulaire doit se reconnecter après le déploiement afin que l'API crée son affectation `super_admin`. Cette variable ne doit jamais être ajoutée au frontend ou à Git.
 
+## Parcours MFA administrateur
+
+Le frontend fournit désormais une page **Sécurité MFA** accessible depuis Profil > Administration, à l'URL `/security/mfa` :
+
+1. enrôlement TOTP avec QR code ;
+2. saisie et vérification d'un code à six chiffres ;
+3. challenge automatique à la connexion d'un administrateur possédant un facteur vérifié mais une session AAL1 ;
+4. ajout d'un second facteur TOTP de secours ;
+5. interdiction de supprimer le dernier facteur vérifié.
+
+La page et la boîte de challenge ne remplacent pas la vérification de l'Edge Function. Le secret TOTP, les codes saisis et les QR codes ne sont jamais enregistrés dans les données ECODIS ni dans les journaux applicatifs.
+
+Avant d'activer ou de conserver `APP_REQUIRE_ADMIN_MFA=true` en staging ou production, vérifier que le déploiement frontend contenant ce parcours est disponible et qu'au moins un compte de gouvernance dispose de deux facteurs fonctionnels. La perte des deux facteurs relève d'une procédure de récupération hors application, approuvée et auditée.
+
 ## Fichiers principaux
 
 - `supabase/migrations/20260821203728_phase4_roles_permissions.sql`
 - `supabase/functions/server/src/domain/authorization.ts`
 - `supabase/functions/server/src/lib/auth.ts`
 - `supabase/functions/server/src/routes/auth.ts`
+- `src/app/domain/mfa.ts`
+- `src/app/components/mfa-challenge-dialog.tsx`
+- `src/app/components/pages/mfa-security-page.tsx`
+- `RECETTE_MFA_ADMIN.md`
 
 ## Vérifications à inclure dans la recette finale Phase 4
 
@@ -49,3 +67,4 @@ Le titulaire doit se reconnecter après le déploiement afin que l'API crée son
 5. Un super-administrateur avec AAL1 ne peut pas attribuer `admin` ; avec AAL2, il le peut.
 6. L'API refuse toute affectation `super_admin` et toute suppression d'un super-administrateur.
 7. Chaque changement autorisé est présent dans le journal d'audit.
+8. Le parcours MFA couvre l'enrôlement, le challenge de connexion, le second facteur et l'impossibilité de retirer le dernier facteur vérifié.

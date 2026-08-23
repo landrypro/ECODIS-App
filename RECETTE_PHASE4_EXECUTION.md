@@ -11,7 +11,7 @@
 | A | Gel du commit, sauvegarde staging, comptes et données `RECETTE-P4-*` | Commit et sauvegarde identifiés |
 | B | Contrôles locaux frontend, Deno et migrations | Toutes les commandes vertes |
 | C | Déploiement migrations puis Edge Function puis frontend staging | Santé HTTP 200 et version tracée |
-| D | P4.1 workflow, P4.2 rôles, P4.3 modération | Aucun défaut de confidentialité/autorisation |
+| D | P4.1 workflow, P4.2 rôles/MFA, P4.3 modération | Aucun défaut de confidentialité/autorisation |
 | E | P4.4 progression avancée | Idempotence et non-régression confirmées |
 | F | P4.5 hors ligne et synchronisation | Cache sûr, révocation et reprise confirmés |
 | G | Non-régression, sécurité, nettoyage et décision | PV signé Go/No-Go |
@@ -99,7 +99,9 @@ Pour P4.5, conserver des captures des quatre panneaux DevTools : Service Workers
 
 ## 5. Fiche de preuve
 
-Copier cette ligne pour chaque cas E, R, M, P et O du document canonique :
+Avant R-07 et R-08, exécuter les cas MFA-01 à MFA-10 de `RECETTE_MFA_ADMIN.md` (également repris dans `RECETTE_FINALE_PHASE4.md`). Le test MFA utilise deux facteurs TOTP distincts et ne doit jamais produire de capture contenant QR code, secret ou code à usage unique.
+
+Copier cette ligne pour chaque cas E, R, MFA, M, P et O du document canonique :
 
 | Cas | Statut | Date/heure | Profil | Navigateur | Preuve | Anomalie |
 |---|---|---|---|---|---|---|

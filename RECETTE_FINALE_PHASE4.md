@@ -15,8 +15,9 @@
    ```
 
 4. Le compte de gouvernance doit être connecté au moins une fois après le déploiement afin de recevoir son rôle `super_admin`.
-5. Préparer six profils distincts : visiteur, membre, éditeur, modérateur, administrateur et super-administrateur MFA.
-6. Ne jamais placer une clé `service_role`, un mot de passe PostgreSQL ou un jeton dans une capture, le code source ou le rapport de recette.
+5. Déployer le frontend contenant la page `/security/mfa` et confirmer que l'enrôlement TOTP est activé dans Supabase Auth pour staging.
+6. Préparer six profils distincts : visiteur, membre, éditeur, modérateur, administrateur et super-administrateur MFA. Pour le super-administrateur, prévoir deux applications TOTP ou deux appareils distincts afin de tester le facteur de secours.
+7. Ne jamais placer une clé `service_role`, un mot de passe PostgreSQL, un jeton, un code TOTP ou un QR code dans une capture, le code source ou le rapport de recette.
 
 ## 2. Vérifications locales obligatoires
 
@@ -99,6 +100,23 @@ Préfixer les données de recette par `RECETTE-P4-<horodatage>` afin de permettr
 | R-08 | Super-admin AAL2 attribue `admin` | Autorisé et audité |
 | R-09 | Tentative d’attribution ou retrait `super_admin` par API | Refus 403 |
 | R-10 | Suppression d’un compte admin par admin | Refus ; super-admin seul selon règles |
+
+### 6.1 Parcours MFA administrateur
+
+Les cas détaillés sont également disponibles dans `RECETTE_MFA_ADMIN.md`. Ils sont obligatoires avant les cas R-07 et R-08.
+
+| Cas | Action | Résultat attendu |
+|---|---|---|
+| MFA-01 | Se connecter sans facteur, puis ouvrir Profil > Administration > Sécurité MFA | État « À configurer » ; les actions sensibles restent refusées en AAL1 |
+| MFA-02 | Activer MFA, scanner le QR code et saisir un code valide | Facteur vérifié, session AAL2 et message de succès ; aucun secret ou code dans les preuves, logs ou stockage local |
+| MFA-03 | Promouvoir un membre administrateur après MFA-02 | Action autorisée et audit créé |
+| MFA-04 | Se déconnecter puis se reconnecter | Challenge MFA automatique proposé ; action sensible refusée avant vérification |
+| MFA-05 | Saisir un code invalide ou expiré dans le challenge | Erreur visible ; aucune élévation AAL2 |
+| MFA-06 | Saisir un code valide dans le challenge | Session AAL2 ; action sensible autorisée |
+| MFA-07 | Ajouter un facteur de secours sur un second appareil/application | Deux facteurs TOTP vérifiés visibles |
+| MFA-08 | Tenter de retirer l'unique facteur vérifié | Action indisponible ou refusée ; un facteur vérifié demeure |
+| MFA-09 | Retirer l'ancien facteur alors qu'un secours est vérifié | Retrait autorisé ; un facteur vérifié demeure |
+| MFA-10 | Tenter de fermer le challenge par croix, Échap et clic hors de la boîte | Fermeture impossible ; accès à l'espace administrateur bloqué jusqu'à AAL2 ; `/security/mfa` reste accessible pour gérer les facteurs |
 
 ## 7. P4.3 — Modération communautaire
 
@@ -277,6 +295,6 @@ Vérifier l'incrément de `content_version`, l'unicité de chaque `event_id` et 
 
 La Phase 4 est recevable seulement si tous les cas applicables sont réussis, les tests automatisés sont verts, les migrations sont réversibles/documentées, et aucun incident de sécurité ou de perte de données n’est identifié.
 
-Décision **No-Go** immédiate si : un brouillon devient public, un rôle permet une élévation de privilège, une URL signée ou un jeton est conservé localement, une copie révoquée reste disponible après une réconciliation réussie, une progression terminée régresse, ou une migration échoue sur une base restaurée.
+Décision **No-Go** immédiate si : un brouillon devient public, un rôle permet une élévation de privilège, un administrateur ne peut pas obtenir AAL2 ou contourne le challenge MFA, une URL signée ou un jeton est conservé localement, une copie révoquée reste disponible après une réconciliation réussie, une progression terminée régresse, ou une migration échoue sur une base restaurée.
 
 Le procès-verbal final doit indiquer pour chaque cas : `Réussi`, `Échoué`, `Bloqué` ou `Non applicable`, la date, le recetteur, la preuve et l'anomalie associée.

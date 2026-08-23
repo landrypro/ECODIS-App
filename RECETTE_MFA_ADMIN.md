@@ -23,7 +23,7 @@
 | MFA-07 | Ajouter un facteur de secours sur un second appareil | Deux facteurs TOTP vérifiés visibles. |
 | MFA-08 | Tenter de retirer l'unique facteur vérifié | Bouton désactivé ; ajout d'un secours requis. |
 | MFA-09 | Retirer l'ancien facteur alors qu'un secours est vérifié | Retrait autorisé ; un facteur vérifié demeure. |
-| MFA-10 | Fermer le challenge MFA | Navigation publique possible ; action sensible toujours refusée par l'API. |
+| MFA-10 | Tenter de fermer le challenge par croix, Échap et clic hors de la boîte | Fermeture impossible ; accès à l'espace administrateur bloqué jusqu'à AAL2 ; `/security/mfa` reste accessible pour gérer les facteurs. |
 
 ## Preuves et nettoyage
 

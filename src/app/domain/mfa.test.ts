@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canRemoveMfaFactor, getVerifiedMfaFactors, requiresMfaStepUp, type MfaFactor, type MfaState } from "./mfa";
+import { canRemoveMfaFactor, getVerifiedMfaFactors, requiresMfaStepUp, shouldBlockMfaChallenge, type MfaFactor, type MfaState } from "./mfa";
 
 const verified: MfaFactor = { id: "factor-1", factorType: "totp", friendlyName: "Principal", status: "verified", createdAt: null };
 const backup: MfaFactor = { id: "factor-2", factorType: "totp", friendlyName: "Secours", status: "verified", createdAt: null };
@@ -13,6 +13,9 @@ describe("MFA domain", () => {
     expect(requiresMfaStepUp(true, aal1)).toBe(true);
     expect(requiresMfaStepUp(false, aal1)).toBe(false);
     expect(requiresMfaStepUp(true, { ...aal1, currentLevel: "aal2" })).toBe(false);
+    expect(shouldBlockMfaChallenge(true, aal1, "/admin/users")).toBe(true);
+    expect(shouldBlockMfaChallenge(true, aal1, "/security/mfa")).toBe(false);
+    expect(shouldBlockMfaChallenge(true, { ...aal1, factors: [] }, "/admin/users")).toBe(false);
   });
 
   it("protège le dernier facteur MFA vérifié", () => {

@@ -1,6 +1,6 @@
 # ECODIS App — Phase 4 : spécifications et préparation du codage
 
-**Statut :** proposition prête pour validation fonctionnelle et technique  
+**Statut :** spécifications de référence — complétées avec le parcours MFA administrateur
 **Portée :** workflow éditorial, progression avancée, modération, rôles fins et expérience hors ligne  
 **Hors portée de ce document :** aucune migration, aucun déploiement ni changement de comportement applicatif.
 
@@ -16,6 +16,7 @@ La phase est découpée en lots livrables. Aucun lot ne nécessite de réécrire
 |---|---|---|
 | P4.1 | Cycle éditorial des contenus et des séries | aucune |
 | P4.2 | Rôles métier et permissions | P4.1 recommandée |
+| P4.2.1 | Parcours MFA TOTP des administrateurs | P4.2 et Supabase Auth MFA |
 | P4.3 | Modération traçable des commentaires | P4.2 |
 | P4.4 | Progression détaillée et reprise de lecture | P4.1 |
 | P4.5 | Hors ligne robuste et synchronisation | P4.4 |
@@ -130,6 +131,43 @@ Règles de sûreté :
 - attribution/retrait d'un rôle privilégié exige un motif et crée un audit ;
 - une attribution `admin` ou `super_admin` exige une session MFA niveau AAL2 ;
 - l'autorisation serveur repose sur les rôles en base, jamais sur `user_metadata` du JWT.
+
+### 4.3 P4.2.1 — Parcours MFA administrateur
+
+#### Objectif
+
+Permettre à chaque `admin` ou `super_admin` d'atteindre le niveau d'assurance `AAL2` par TOTP, sans jamais contourner le contrôle serveur déjà appliqué aux actions sensibles.
+
+#### Parcours retenu
+
+1. Dans Profil > Administration, l'administrateur ouvre **Sécurité MFA** (`/security/mfa`).
+2. La page affiche son niveau courant (`AAL1` ou `AAL2`) et ses facteurs vérifiés, sans exposer de secret.
+3. Il démarre l'enrôlement d'un facteur TOTP, scanne le QR code dans une application d'authentification puis saisit le code à six chiffres.
+4. Après vérification, la session est rafraîchie ; le niveau courant devient `AAL2`.
+5. Il ajoute un second facteur TOTP de secours sur un autre appareil ou une autre application d'authentification.
+6. À une connexion ultérieure, si un administrateur possède un facteur vérifié mais que sa session est encore `AAL1`, une boîte de dialogue lui demande automatiquement le code TOTP. Elle ne peut être fermée ni par la croix, ni par Échap, ni par clic hors de la boîte ; l'accès à l'espace administrateur reste bloqué jusqu'à l'obtention d'`AAL2`.
+
+Un membre non administrateur ne voit pas l'entrée de navigation ni la page de gestion dans le parcours courant. Cette restriction d'interface ne remplace jamais l'autorisation vérifiée côté API.
+
+#### Règles de sécurité et de récupération
+
+- le QR code et le secret TOTP ne sont ni journalisés, ni persistés dans `localStorage`, IndexedDB ou la base ECODIS ; la gestion du facteur est confiée à Supabase Auth ;
+- le code à six chiffres est utilisé uniquement pour la vérification ou le challenge, puis oublié par l'interface ;
+- il est interdit de supprimer le dernier facteur TOTP vérifié ;
+- la page `/security/mfa` reste accessible pour gérer les facteurs ; elle constitue l'unique exception de navigation au verrouillage de challenge ;
+- la politique de secours est un second facteur TOTP indépendant ; des codes de récupération, SMS et facteurs matériels ne font pas partie du périmètre actuel ;
+- la perte simultanée des deux facteurs suit une procédure de récupération hors application, tracée et approuvée par la gouvernance ;
+- `APP_REQUIRE_ADMIN_MFA=true` reste le garde-fou serveur : l'interface MFA améliore l'expérience, mais ne confère aucune permission par elle-même.
+
+#### Critères d'acceptation
+
+- un administrateur peut enrôler et vérifier un premier puis un second facteur ;
+- un QR code est présenté pendant l'enrôlement, mais aucune clé secrète en clair n'est affichée ou stockée par ECODIS ;
+- une connexion administrateur AAL1 déclenche le challenge lorsque des facteurs vérifiés existent ;
+- un code valide donne accès AAL2 à la session active ; un code invalide n'élève jamais le niveau ;
+- une action d'attribution du rôle `admin` est refusée en AAL1 et autorisée seulement après passage effectif en AAL2 ;
+- la suppression du dernier facteur est impossible ;
+- la recette détaillée est tenue dans `RECETTE_MFA_ADMIN.md` et intégrée à la recette finale de Phase 4.
 
 ---
 
