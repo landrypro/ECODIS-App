@@ -10,7 +10,7 @@ import {
 } from "../lib/auth.ts";
 import { handleApiError, ValidationError } from "../lib/errors.ts";
 import { logAudit } from "../lib/audit.ts";
-import { getUser, supabaseAdmin, supabasePublic } from "../lib/supabase.ts";
+import { getUser, supabaseAdmin, supabasePublicForRequest } from "../lib/supabase.ts";
 import { validateEmail, validateOptionalString, validatePassword } from "../lib/validation.ts";
 import { canAssignRequestedRoles, getPrimaryRole, normalizeRoles } from "../domain/authorization.ts";
 
@@ -25,7 +25,7 @@ authRoutes.post("/auth/signup", async (c) => {
     const validatedEmail = validateEmail(email);
     const validatedPassword = validatePassword(password);
     const validatedName = validateOptionalString(name, "Nom", 120) || validatedEmail.split("@")[0];
-    const { data, error } = await supabasePublic().auth.signUp({
+    const { data, error } = await supabasePublicForRequest(c.req.raw).auth.signUp({
       email: validatedEmail,
       password: validatedPassword,
       options: { data: { name: validatedName } },

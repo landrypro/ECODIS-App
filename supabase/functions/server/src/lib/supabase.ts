@@ -30,6 +30,21 @@ export function supabasePublic() {
   return publicClient;
 }
 
+/**
+ * Utilise la clé publique effectivement fournie par le client pour les routes
+ * publiques. Cela évite de dépendre d'une ancienne clé anonyme conservée dans
+ * l'environnement de l'Edge Function lors d'une rotation de clés Supabase.
+ */
+export function supabasePublicForRequest(req: Request) {
+  const authorization = req.headers.get("Authorization");
+  const accessToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  if (!accessToken) return publicClient;
+
+  return createClient(supabaseUrl, accessToken, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
 export async function getUser(req: Request) {
   const token = req.headers.get("Authorization")?.split(" ")[1];
   if (!token) return null;
