@@ -85,7 +85,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     setDismissed(true);
     try {
       localStorage.setItem(INSTALL_DISMISSED_KEY, "true");
-    } catch {}
+    } catch {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
   };
 
   const showInstallBanner = canInstall && !dismissed;

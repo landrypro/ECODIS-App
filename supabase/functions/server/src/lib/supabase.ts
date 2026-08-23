@@ -1,4 +1,4 @@
-import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
+import { createClient } from "npm:@supabase/supabase-js@2.98.0";
 import { BUCKET_NAME, getRequiredEnv } from "../config.ts";
 
 const supabaseUrl = getRequiredEnv("SUPABASE_URL");

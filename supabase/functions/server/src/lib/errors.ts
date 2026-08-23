@@ -5,10 +5,16 @@ export class ValidationError extends Error {
   }
 }
 
+import { sanitizeErrorMessage, writeLog } from "./observability.ts";
+
 export function handleApiError(c: any, error: unknown, label: string) {
   if (error instanceof ValidationError) {
     return c.json({ error: error.message }, error.status);
   }
-  console.error(label, error);
-  return c.json({ error: `${label}: ${error}` }, 500);
+  writeLog("error", "api_error", {
+    requestId: c.get?.("requestId"),
+    label,
+    message: sanitizeErrorMessage(error),
+  });
+  return c.json({ error: "Une erreur interne est survenue. Reessayez plus tard.", requestId: c.get?.("requestId") }, 500);
 }

@@ -25,10 +25,11 @@ import {
 } from "lucide-react";
 
 export function ProfilPage() {
-  const { user, signOut, favorites, isAdmin, role } = useAuth();
+  const { user, signOut, favorites, isAdmin, roles } = useAuth();
   const { downloads, storageUsed } = useDownloads();
   const { platform, standalone, canInstall, installApp } = usePlatform();
   const navigate = useNavigate();
+  const canModerate = roles.some((currentRole) => ["moderator", "admin", "super_admin"].includes(currentRole));
 
   const handleLogout = async () => {
     await signOut();
@@ -155,6 +156,23 @@ export function ProfilPage() {
           ))}
         </div>
       </div>
+
+      {/* Admin section */}
+      {canModerate && (
+        <div className="px-4 mb-4 space-y-2">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-1">Modération</p>
+          <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+            <button
+              onClick={() => navigate("/moderation")}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-muted transition-colors"
+            >
+              <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center"><Shield className="w-4 h-4 text-amber-600" /></div>
+              <span className="flex-1 text-[13px] text-card-foreground font-medium">Modération des commentaires</span>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Admin section */}
       {isAdmin && (

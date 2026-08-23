@@ -1,6 +1,13 @@
-import { functionsBaseUrl, publicAnonKey } from "/utils/supabase/info";
+import { functionsBaseUrl, publicAnonKey } from "../../../utils/supabase/info";
 
 export const BASE = functionsBaseUrl;
+
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 export function getHeaders(accessToken?: string | null): HeadersInit {
   return {
@@ -24,7 +31,7 @@ export async function fetchJson<T>(
 
   if (!response.ok) {
     const message = typeof data?.error === "string" ? data.error : `Request failed with status ${response.status}`;
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   return data as T;

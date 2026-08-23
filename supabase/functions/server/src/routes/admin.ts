@@ -4,7 +4,7 @@ import { clearAuditLogs, fetchAuditLogs, logAudit } from "../lib/audit.ts";
 import { getAnnouncements, getAppConfig, getStoredCategories, saveAnnouncements, updateAppConfigRow, updateStoredCategories } from "../lib/app-config.ts";
 import { requireAdmin } from "../lib/auth.ts";
 import { handleApiError, ValidationError } from "../lib/errors.ts";
-import { fetchSeriesIdsForMessage, getMessageRow, removeMediaFile, syncSeriesModuleCounts } from "../lib/messages.ts";
+import { assertMessageCanBeDeleted, fetchSeriesIdsForMessage, getMessageRow, removeMediaFile, syncSeriesModuleCounts } from "../lib/messages.ts";
 import { mapAppConfig, mapSeries, mapMessage } from "../lib/mappers.ts";
 import { seedMessages, seedSeries } from "../lib/seed-data.ts";
 import { supabaseAdmin } from "../lib/supabase.ts";
@@ -33,6 +33,8 @@ adminRoutes.post("/seed", async (c) => {
       duration: item.duration,
       thumbnail: item.thumbnail,
       media_path: item.mediaPath,
+      status: "published",
+      published_at: item.createdAt,
       created_at: item.createdAt,
       updated_at: now,
       user_id: user!.id,
@@ -49,6 +51,8 @@ adminRoutes.post("/seed", async (c) => {
         author: series.author,
         category: series.category,
         total_modules: series.messageIndexes.length,
+        status: "published",
+        published_at: now,
         created_at: now,
         updated_at: now,
       }).select("*").single();
@@ -85,6 +89,14 @@ adminRoutes.put("/admin/config", async (c) => {
     const { user, error: authError } = await requireAdmin(c.req.raw);
     if (authError) return c.json({ error: authError }, user ? 403 : 401);
     const body = await c.req.json();
+    const maxUploadSizeMb = body.maxUploadSizeMb === undefined ? undefined : Number(body.maxUploadSizeMb);
+    const maxOfflineStorageMb = body.maxOfflineStorageMb === undefined ? undefined : Number(body.maxOfflineStorageMb);
+    if (maxUploadSizeMb !== undefined && (!Number.isFinite(maxUploadSizeMb) || maxUploadSizeMb < 1 || maxUploadSizeMb > 500)) {
+      throw new ValidationError("maxUploadSizeMb doit etre compris entre 1 et 500");
+    }
+    if (maxOfflineStorageMb !== undefined && (!Number.isInteger(maxOfflineStorageMb) || maxOfflineStorageMb < 50 || maxOfflineStorageMb > 2048)) {
+      throw new ValidationError("maxOfflineStorageMb doit etre un entier compris entre 50 et 2048");
+    }
     const updatedRow = await updateAppConfigRow({
       ...(body.appName !== undefined ? { app_name: validateRequiredString(body.appName, "appName", 2, 120) } : {}),
       ...(body.appSubtitle !== undefined ? { app_subtitle: validateOptionalString(body.appSubtitle, "appSubtitle", 160) } : {}),
@@ -94,7 +106,8 @@ adminRoutes.put("/admin/config", async (c) => {
       ...(body.downloadsEnabled !== undefined ? { downloads_enabled: validateBoolean(body.downloadsEnabled, "downloadsEnabled") } : {}),
       ...(body.analyticsEnabled !== undefined ? { analytics_enabled: validateBoolean(body.analyticsEnabled, "analyticsEnabled") } : {}),
       ...(body.autoSeedEnabled !== undefined ? { auto_seed_enabled: validateBoolean(body.autoSeedEnabled, "autoSeedEnabled") } : {}),
-      ...(body.maxUploadSizeMb !== undefined ? { max_upload_size_mb: Number(body.maxUploadSizeMb) } : {}),
+      ...(maxUploadSizeMb !== undefined ? { max_upload_size_mb: maxUploadSizeMb } : {}),
+      ...(maxOfflineStorageMb !== undefined ? { max_offline_storage_mb: maxOfflineStorageMb } : {}),
       ...(body.defaultLanguage !== undefined ? { default_language: validateOptionalString(body.defaultLanguage, "defaultLanguage", 10) || "fr" } : {}),
       ...(body.welcomeMessage !== undefined ? { welcome_message: validateOptionalString(body.welcomeMessage, "welcomeMessage", 240) } : {}),
       ...(body.welcomeVerse !== undefined ? { welcome_verse: validateOptionalString(body.welcomeVerse, "welcomeVerse", 120) } : {}),
@@ -102,9 +115,6 @@ adminRoutes.put("/admin/config", async (c) => {
       ...(body.accentColor !== undefined ? { accent_color: validateOptionalString(body.accentColor, "accentColor", 20) } : {}),
     }, user!.id);
 
-    if (!Number.isFinite(updatedRow.max_upload_size_mb) || updatedRow.max_upload_size_mb < 1 || updatedRow.max_upload_size_mb > 500) {
-      throw new ValidationError("maxUploadSizeMb doit etre compris entre 1 et 500");
-    }
     await logAudit(user!.id, user!.email || "", "config_update", "Configuration de l'application mise a jour", body);
     return c.json({ config: mapAppConfig(updatedRow) });
   } catch (error) {
@@ -119,6 +129,22 @@ adminRoutes.get("/admin/audit-log", async (c) => {
     return c.json({ logs: await fetchAuditLogs(200) });
   } catch (error) {
     return handleApiError(c, error, "Get audit log error");
+  }
+});
+
+adminRoutes.get("/admin/client-errors", async (c) => {
+  try {
+    const { user, error: authError } = await requireAdmin(c.req.raw);
+    if (authError) return c.json({ error: authError }, user ? 403 : 401);
+    const { data, error } = await supabaseAdmin()
+      .from("client_error_logs")
+      .select("id, message, source, path, request_id, created_at")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) throw error;
+    return c.json({ errors: data ?? [] });
+  } catch (error) {
+    return handleApiError(c, error, "Get client errors");
   }
 });
 
@@ -190,6 +216,10 @@ adminRoutes.post("/admin/messages/bulk-delete", async (c) => {
     for (const messageId of validatedMessageIds) {
       const message = await getMessageRow(messageId);
       if (!message) continue;
+      if (message.status !== "draft") {
+        throw new ValidationError("La suppression groupee est reservee aux brouillons");
+      }
+      await assertMessageCanBeDeleted(messageId);
       impactedSeriesIds.push(...await fetchSeriesIdsForMessage(messageId));
       await removeMediaFile(message.media_path);
       await supabaseAdmin().from("messages").delete().eq("id", messageId);
@@ -222,7 +252,7 @@ adminRoutes.get("/admin/stats", async (c) => {
       admin.from("favorites").select("message_id, user_id, created_at"),
       admin.from("comments").select("message_id, user_id, user_name, created_at"),
       admin.from("series").select("*"),
-      admin.from("series_progress").select("series_id, user_id, message_id, completed_at, last_accessed_at"),
+      admin.from("series_progress").select("series_id, user_id, message_id, state, completed_at, last_accessed_at"),
     ]);
 
     const allMessages = messagesRes.data ?? [];
@@ -328,9 +358,13 @@ adminRoutes.get("/admin/stats", async (c) => {
     const seriesStats = [];
     for (const series of allSeries) {
       const enrolledUsers = new Set(allProgress.filter((row: any) => row.series_id === series.id).map((row: any) => row.user_id));
-      const messageIds = new Set((await admin.from("series_messages").select("message_id").eq("series_id", series.id)).data?.map((row: any) => row.message_id) ?? []);
+      const messageIds = new Set(
+        ((await admin.from("series_messages").select("message_id").eq("series_id", series.id)).data ?? [])
+          .map((row: any) => row.message_id)
+          .filter((messageId: string) => messageMap.get(messageId)?.status === "published"),
+      );
       const completionByUser: Record<string, Set<string>> = {};
-      for (const row of allProgress.filter((item: any) => item.series_id === series.id)) {
+      for (const row of allProgress.filter((item: any) => item.series_id === series.id && item.state === "completed" && messageIds.has(item.message_id))) {
         completionByUser[row.user_id] ??= new Set();
         completionByUser[row.user_id].add(row.message_id);
       }

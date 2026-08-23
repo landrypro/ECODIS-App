@@ -29,6 +29,7 @@ const AdminUsersPage = lazyPage(() => import("./components/pages/admin-users-pag
 const AdminStatsPage = lazyPage(() => import("./components/pages/admin-stats-page").then((module) => ({ default: module.AdminStatsPage })));
 const AdminDashboardPage = lazyPage(() => import("./components/pages/admin-dashboard-page").then((module) => ({ default: module.AdminDashboardPage })));
 const SeriesDetailPage = lazyPage(() => import("./components/pages/series-detail-page").then((module) => ({ default: module.SeriesDetailPage })));
+const ModerationPage = lazyPage(() => import("./components/pages/moderation-page").then((module) => ({ default: module.ModerationPage })));
 
 export const router = createBrowserRouter([
   {
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
       { path: "profil", Component: ProfilPage },
       { path: "downloads", Component: DownloadsPage },
       { path: "series", Component: SeriesListPage },
+      { path: "moderation", Component: ModerationPage },
     ],
   },
   { path: "/login", Component: LoginPage },

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "./auth-context";
 import { useCommentMutations, useComments } from "../hooks/use-comments";
-import { MessageCircle, Send, Trash2, Loader2, LogIn } from "lucide-react";
+import { Flag, MessageCircle, Send, Trash2, Loader2, LogIn } from "lucide-react";
+import type { CommentReportReason } from "../services";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -10,15 +11,19 @@ interface CommentsSectionProps {
 }
 
 export function CommentsSection({ messageId }: CommentsSectionProps) {
-  const { user, accessToken, isAdmin } = useAuth();
+  const { user, accessToken } = useAuth();
   const navigate = useNavigate();
   const [text, setText] = useState("");
   const { data: comments = [], isLoading } = useComments(messageId);
-  const { addMutation, deleteMutation } = useCommentMutations(messageId, accessToken);
+  const { addMutation, deleteMutation, reportMutation } = useCommentMutations(messageId, accessToken);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!accessToken || !text.trim()) return;
+    if (!navigator.onLine) {
+      toast.error("Les commentaires ne sont pas disponibles hors ligne. Votre texte reste dans le formulaire.");
+      return;
+    }
 
     try {
       await addMutation.mutateAsync(text.trim());
@@ -31,11 +36,29 @@ export function CommentsSection({ messageId }: CommentsSectionProps) {
 
   const handleDelete = async (commentId: string) => {
     if (!accessToken) return;
+    if (!navigator.onLine) { toast.error("La suppression d'un commentaire necessite une connexion."); return; }
     try {
       await deleteMutation.mutateAsync(commentId);
       toast.success("Commentaire supprime");
     } catch (error: any) {
       toast.error(error.message || "Erreur lors de la suppression");
+    }
+  };
+
+  const handleReport = async (commentId: string) => {
+    if (!accessToken) return;
+    if (!navigator.onLine) { toast.error("Le signalement necessite une connexion."); return; }
+    const reason = window.prompt(
+      "Motif : spam, harassment, inappropriate_content, misinformation ou other",
+      "other",
+    )?.trim() as CommentReportReason | undefined;
+    if (!reason) return;
+    const detail = window.prompt("Précision facultative", "")?.trim() ?? "";
+    try {
+      await reportMutation.mutateAsync({ commentId, reason, detail });
+      toast.success("Signalement transmis à la modération");
+    } catch (error: any) {
+      toast.error(error.message || "Erreur lors du signalement");
     }
   };
 
@@ -144,8 +167,9 @@ export function CommentsSection({ messageId }: CommentsSectionProps) {
       ) : (
         <div className="space-y-4">
           {comments.map((comment) => {
-            const canDelete = Boolean(user && (comment.userId === user.id || isAdmin));
+            const canDelete = Boolean(user && comment.userId === user.id);
             const isDeleting = deleteMutation.isPending && deleteMutation.variables === comment.id;
+            const isReporting = reportMutation.isPending && reportMutation.variables?.commentId === comment.id;
             return (
               <div key={comment.id} className="flex gap-2.5">
                 <div className={`w-8 h-8 rounded-full ${getAvatarColor(comment.userId)} flex items-center justify-center shrink-0`}>
@@ -167,6 +191,16 @@ export function CommentsSection({ messageId }: CommentsSectionProps) {
                     >
                       {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
                       Supprimer
+                    </button>
+                  )}
+                  {user && !canDelete && (
+                    <button
+                      onClick={() => handleReport(comment.id)}
+                      disabled={isReporting}
+                      className="flex items-center gap-1 mt-1 ml-2 text-[11px] text-muted-foreground hover:text-amber-700 transition-colors"
+                    >
+                      {isReporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Flag className="w-3 h-3" />}
+                      Signaler
                     </button>
                   )}
                 </div>

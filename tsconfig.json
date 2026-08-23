@@ -21,5 +21,5 @@
     },
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "utils", "vite.config.ts", "eslint.config.js"]
+  "include": ["src", "utils", "vite.config.ts", "vitest.config.ts", "playwright.config.ts", "eslint.config.js"]
 }

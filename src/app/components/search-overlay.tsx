@@ -20,8 +20,9 @@ const MAX_HISTORY = 8;
 type TabType = "all" | "audio" | "video" | "text";
 
 interface SearchOverlayProps {
+  open: boolean;
   messages: Message[];
-  onClose: () => void;
+  onOpenChange: (open: boolean) => void;
 }
 
 function getHistory(): string[] {
@@ -67,7 +68,7 @@ function highlightMatch(text: string, query: string): React.ReactNode {
   );
 }
 
-export function SearchOverlay({ messages, onClose }: SearchOverlayProps) {
+export function SearchOverlay({ open, messages, onOpenChange }: SearchOverlayProps) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -75,13 +76,15 @@ export function SearchOverlay({ messages, onClose }: SearchOverlayProps) {
   const [history, setHistory] = useState<string[]>(getHistory());
 
   useEffect(() => {
+    if (!open) return;
+
     // Auto-focus & lock scroll
     setTimeout(() => inputRef.current?.focus(), 50);
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = "";
     };
-  }, []);
+  }, [open]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -111,7 +114,7 @@ export function SearchOverlay({ messages, onClose }: SearchOverlayProps) {
   const handleSelectResult = (msg: Message) => {
     addToHistory(query);
     setHistory(getHistory());
-    onClose();
+    onOpenChange(false);
     navigate(`/message/${msg.id}`);
   };
 
@@ -170,6 +173,8 @@ export function SearchOverlay({ messages, onClose }: SearchOverlayProps) {
     }
   };
 
+  if (!open) return null;
+
   return (
     <div className="fixed inset-0 z-[100] bg-background flex flex-col">
       <div className="max-w-lg mx-auto w-full flex flex-col h-full">
@@ -178,7 +183,7 @@ export function SearchOverlay({ messages, onClose }: SearchOverlayProps) {
           <form onSubmit={handleSubmit} className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onOpenChange(false)}
               className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-muted transition-colors shrink-0"
             >
               <ArrowLeft className="w-5 h-5 text-foreground" />
@@ -261,9 +266,17 @@ export function SearchOverlay({ messages, onClose }: SearchOverlayProps) {
                   </div>
                   <div className="space-y-1">
                     {history.map((term) => (
-                      <button
+                      <div
                         key={term}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handleSelectHistory(term)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleSelectHistory(term);
+                          }
+                        }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted transition-colors text-left group"
                       >
                         <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -271,12 +284,13 @@ export function SearchOverlay({ messages, onClose }: SearchOverlayProps) {
                           {term}
                         </span>
                         <button
+                          type="button"
                           onClick={(e) => handleRemoveHistory(term, e)}
                           className="w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/10 transition-opacity shrink-0"
                         >
                           <X className="w-3.5 h-3.5 text-muted-foreground" />
                         </button>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 </>

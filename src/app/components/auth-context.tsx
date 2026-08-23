@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { createClient, type Session, type User } from "@supabase/supabase-js";
-import { publicAnonKey, supabaseUrl } from "/utils/supabase/info";
-import { fetchFavorites, fetchUserRole } from "./api";
+import { publicAnonKey, supabaseUrl } from "../../../utils/supabase/info";
+import { fetchFavorites, fetchUserAuthorization, type AppRole } from "./api";
 
 const supabase = createClient(supabaseUrl, publicAnonKey);
 
@@ -11,7 +11,9 @@ interface AuthContextType {
   accessToken: string | null;
   isLoading: boolean;
   favorites: string[];
-  role: string;
+  role: AppRole;
+  roles: AppRole[];
+  permissions: string[];
   isAdmin: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -27,6 +29,8 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
   favorites: [],
   role: "user",
+  roles: ["user"],
+  permissions: [],
   isAdmin: false,
   signIn: async () => {},
   signOut: async () => {},
@@ -40,10 +44,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [role, setRole] = useState<string>("user");
+  const [role, setRole] = useState<AppRole>("user");
+  const [roles, setRoles] = useState<AppRole[]>(["user"]);
+  const [permissions, setPermissions] = useState<string[]>([]);
 
   const accessToken = session?.access_token || null;
-  const isAdmin = role === "admin";
+  const isAdmin = roles.includes("admin") || roles.includes("super_admin");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -69,6 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       setFavorites([]);
       setRole("user");
+      setRoles(["user"]);
+      setPermissions([]);
     }
   }, [accessToken]);
 
@@ -80,8 +88,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshRole = async () => {
     if (!accessToken) return;
-    const r = await fetchUserRole(accessToken);
-    setRole(r);
+    const authorization = await fetchUserAuthorization(accessToken);
+    setRole(authorization.role);
+    setRoles(authorization.roles);
+    setPermissions(authorization.permissions);
   };
 
   const signIn = async (email: string, password: string) => {
@@ -100,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setFavorites([]);
     setRole("user");
+    setRoles(["user"]);
+    setPermissions([]);
   };
 
   return (
@@ -111,6 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         favorites,
         role,
+        roles,
+        permissions,
         isAdmin,
         signIn,
         signOut,

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../auth-context";
-import { fetchAllUsers, updateUserRole, deleteUser, AppUser } from "../api";
+import { fetchAllUsers, updateUserRole, deleteUser, AppRole, AppUser } from "../api";
 import {
   ArrowLeft,
   Users,
@@ -48,13 +48,13 @@ export function AdminUsersPage() {
     setLoading(false);
   };
 
-  const handleRoleChange = async (userId: string, newRole: string) => {
+  const handleRoleChange = async (userId: string, newRole: AppRole) => {
     if (!accessToken) return;
     setUpdatingRole(userId);
     try {
       await updateUserRole(userId, newRole, accessToken);
       setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+        prev.map((u) => (u.id === userId ? { ...u, role: newRole, roles: newRole === "admin" ? ["user", "admin"] : ["user"] } : u))
       );
       toast.success(
         `Role mis a jour : ${newRole === "admin" ? "Administrateur" : "Membre"}`

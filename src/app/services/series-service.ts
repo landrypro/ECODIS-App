@@ -1,5 +1,19 @@
 import { fetchJson, getHeaders, jsonHeaders } from "./http";
-import type { Message, Series, SeriesProgress } from "./types";
+import type { EditorialStatus, Message, ProgressEvent, ProgressUpdateResult, Series, SeriesProgress } from "./types";
+
+function emptyProgress(seriesId: string): SeriesProgress {
+  return {
+    userId: "",
+    seriesId,
+    modules: {},
+    completedMessageIds: [],
+    totalModules: 0,
+    progressPercent: 0,
+    nextMessageId: null,
+    isCompleted: false,
+    lastAccessedAt: null,
+  };
+}
 
 export async function fetchAllSeries(): Promise<Series[]> {
   try {
@@ -11,10 +25,15 @@ export async function fetchAllSeries(): Promise<Series[]> {
   }
 }
 
-export async function fetchSeries(id: string): Promise<{ series: Series; messages: Message[] } | null> {
+export async function fetchAdminSeries(accessToken: string): Promise<Series[]> {
+  const data = await fetchJson<{ series?: Series[] }>("/admin/series", { headers: getHeaders(accessToken) });
+  return data.series ?? [];
+}
+
+export async function fetchSeries(id: string, accessToken?: string | null): Promise<{ series: Series; messages: Message[] } | null> {
   try {
     const data = await fetchJson<{ series: Series; messages?: Message[] }>(`/series/${id}`, {
-      headers: getHeaders(),
+      headers: getHeaders(accessToken),
     });
     return { series: data.series, messages: data.messages ?? [] };
   } catch (error) {
@@ -50,35 +69,58 @@ export async function deleteSeries(id: string, accessToken: string): Promise<boo
   }
 }
 
+export async function transitionSeries(
+  id: string,
+  status: EditorialStatus,
+  accessToken: string,
+  scheduledAt?: string,
+): Promise<Series> {
+  const data = await fetchJson<{ series: Series }>(`/series/${id}/transitions`, {
+    method: "POST",
+    headers: jsonHeaders(accessToken),
+    body: JSON.stringify({ status, scheduledAt }),
+  });
+  return data.series;
+}
+
 export async function fetchSeriesProgress(seriesId: string, accessToken: string): Promise<SeriesProgress> {
   try {
     const data = await fetchJson<{ progress?: SeriesProgress }>(`/series/${seriesId}/progress`, {
       headers: getHeaders(accessToken),
     });
-    return data.progress ?? {
-      userId: "",
-      seriesId,
-      completedMessageIds: [],
-      lastAccessedAt: null,
-    };
+    return data.progress ?? emptyProgress(seriesId);
   } catch (error) {
     console.error("Fetch series progress error:", error);
-    return {
-      userId: "",
-      seriesId,
-      completedMessageIds: [],
-      lastAccessedAt: null,
-    };
+    return emptyProgress(seriesId);
   }
+}
+
+export async function updateSeriesProgress(
+  seriesId: string,
+  messageId: string,
+  event: ProgressEvent,
+  accessToken: string,
+  keepalive = false,
+): Promise<ProgressUpdateResult> {
+  return fetchJson<ProgressUpdateResult>(`/series/${seriesId}/progress/${messageId}`, {
+    method: "PUT",
+    headers: jsonHeaders(accessToken),
+    body: JSON.stringify(event),
+    keepalive,
+  });
 }
 
 export async function markSeriesProgress(seriesId: string, messageId: string, accessToken: string): Promise<SeriesProgress | null> {
   try {
-    const data = await fetchJson<{ progress: SeriesProgress }>(`/series/${seriesId}/progress`, {
-      method: "POST",
-      headers: jsonHeaders(accessToken),
-      body: JSON.stringify({ messageId }),
-    });
+    const data = await updateSeriesProgress(seriesId, messageId, {
+      eventId: crypto.randomUUID(),
+      state: "completed",
+      progressPercent: 100,
+      positionSeconds: 0,
+      durationSeconds: 0,
+      clientUpdatedAt: new Date().toISOString(),
+      source: "manual",
+    }, accessToken);
     return data.progress;
   } catch (error) {
     console.error("Mark series progress error:", error);

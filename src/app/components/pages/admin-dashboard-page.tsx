@@ -3,13 +3,13 @@ import { useNavigate } from "react-router";
 import { useAuth } from "../auth-context";
 // Platform-utils import removed — dashboard is now responsive on all viewports
 import {
-  fetchAdminStats, fetchAllUsers, fetchMessages, fetchAllSeries, fetchAppConfig,
+  fetchAdminStats, fetchAllUsers, fetchAdminMessages, fetchAdminSeries, fetchAppConfig,
   updateAppConfig, fetchAuditLogs, clearAuditLogs, fetchStorageStats,
-  updateUserRole, deleteUser, deleteMessage, deleteSeries, bulkDeleteMessages,
+  updateUserRoles, deleteUser, deleteMessage, deleteSeries, bulkDeleteMessages,
   fetchSystemHealth, fetchCategories, updateCategories,
   fetchAnnouncements, createAnnouncement, deleteAnnouncement, exportDataAsJson,
-  createMessage, signupUser, createSeries,
-  AdminStats, AppUser, Message, Series, AppConfig, AuditLog, StorageStats,
+  createMessage, updateMessage, signupUser, createSeries, transitionMessage, transitionSeries,
+  AdminStats, AppRole, AppUser, Message, Series, AppConfig, AuditLog, StorageStats, EditorialStatus,
   SystemHealth, Announcement,
 } from "../api";
 import {
@@ -126,7 +126,7 @@ function StatusDot({ ok }: { ok: boolean }) {
 // ==================== MAIN COMPONENT ====================
 export function AdminDashboardPage() {
   const navigate = useNavigate();
-  const { user, accessToken, isAdmin, isLoading: authLoading } = useAuth();
+  const { user, accessToken, isAdmin, roles, isLoading: authLoading } = useAuth();
   // Platform detection removed — dashboard works on all viewports
   const [activeSection, setActiveSection] = useState<Section>("overview");
   const [loading, setLoading] = useState(true);
@@ -156,8 +156,8 @@ export function AdminDashboardPage() {
       const [st, us, ms, sr, cf, al, sg, hl, cats, ann] = await Promise.all([
         fetchAdminStats(accessToken),
         fetchAllUsers(accessToken),
-        fetchMessages(),
-        fetchAllSeries(),
+        fetchAdminMessages(accessToken),
+        fetchAdminSeries(accessToken),
         fetchAppConfig(accessToken),
         fetchAuditLogs(accessToken),
         fetchStorageStats(accessToken),
@@ -317,7 +317,7 @@ export function AdminDashboardPage() {
           ) : (
             <>
               {activeSection === "overview" && <OverviewSection stats={stats} users={users} messages={messages} series={series} auditLogs={auditLogs} health={health} navigate={navigate} setActiveSection={setActiveSection} />}
-              {activeSection === "users" && <UsersSection users={users} setUsers={setUsers} accessToken={accessToken!} currentUserId={user.id} />}
+              {activeSection === "users" && <UsersSection users={users} setUsers={setUsers} accessToken={accessToken!} currentUserId={user.id} currentRoles={roles} />}
               {activeSection === "content" && <ContentSection messages={messages} series={series} setMessages={setMessages} setSeries={setSeries} accessToken={accessToken!} navigate={navigate} />}
               {activeSection === "config" && <ConfigSection config={config} setConfig={setConfig} accessToken={accessToken!} />}
               {activeSection === "appearance" && <AppearanceSection config={config} setConfig={setConfig} accessToken={accessToken!} />}
@@ -517,7 +517,15 @@ function OverviewSection({ stats, users, messages, series, auditLogs, health, na
 }
 
 // ==================== USERS ====================
-function UsersSection({ users, setUsers, accessToken, currentUserId }: { users: AppUser[]; setUsers: any; accessToken: string; currentUserId: string }) {
+const ROLE_LABELS: Record<AppRole, string> = {
+  user: "Membre",
+  content_editor: "Éditeur",
+  moderator: "Modérateur",
+  admin: "Admin",
+  super_admin: "Super-admin",
+};
+
+function UsersSection({ users, setUsers, accessToken, currentUserId, currentRoles }: { users: AppUser[]; setUsers: any; accessToken: string; currentUserId: string; currentRoles: AppRole[] }) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
@@ -534,14 +542,20 @@ function UsersSection({ users, setUsers, accessToken, currentUserId }: { users: 
     return matchSearch && matchRole;
   });
 
-  const admins = users.filter(u => u.role === "admin").length;
+  const admins = users.filter((u) => u.roles.some((role) => role === "admin" || role === "super_admin")).length;
+  const assignableRoles: AppRole[] = currentRoles.includes("super_admin")
+    ? ["content_editor", "moderator", "admin"]
+    : ["content_editor", "moderator"];
 
-  const handleRoleChange = async (userId: string, newRole: string) => {
-    setUpdatingRole(userId);
+  const handleRoleToggle = async (target: AppUser, role: AppRole) => {
+    const nextRoles = target.roles.includes(role)
+      ? target.roles.filter((assignedRole) => assignedRole !== role)
+      : [...target.roles, role];
+    setUpdatingRole(target.id);
     try {
-      await updateUserRole(userId, newRole, accessToken);
-      setUsers((prev: AppUser[]) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
-      toast.success("Role mis a jour");
+      const updated = await updateUserRoles(target.id, nextRoles, "Mise à jour depuis l'administration", accessToken);
+      setUsers((prev: AppUser[]) => prev.map((u) => u.id === target.id ? { ...u, role: updated.role, roles: updated.roles } : u));
+      toast.success("Rôles mis à jour");
     } catch (e: any) { toast.error(e.message); } finally { setUpdatingRole(null); }
   };
 
@@ -569,6 +583,7 @@ function UsersSection({ users, setUsers, accessToken, currentUserId }: { users: 
           email: result.user.email || newEmail.trim(),
           name: newName.trim(),
           role: result.role || "user",
+          roles: result.roles || ["user"],
           createdAt: new Date().toISOString(),
           lastSignIn: null,
         }]);
@@ -671,21 +686,22 @@ function UsersSection({ users, setUsers, accessToken, currentUserId }: { users: 
                   </div>
                 </td>
                 <td className="px-5 py-3">
-                  <span className={`text-[10px] px-2.5 py-1 rounded-full font-semibold ${u.role === "admin" ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
-                    {u.role === "admin" ? "Admin" : "Membre"}
-                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {u.roles.map((role) => <span key={role} className={`text-[10px] px-2 py-1 rounded-full font-semibold ${role === "admin" || role === "super_admin" ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>{ROLE_LABELS[role]}</span>)}
+                  </div>
                 </td>
                 <td className="px-5 py-3 text-[11px] text-muted-foreground">{new Date(u.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}</td>
                 <td className="px-5 py-3 text-[11px] text-muted-foreground">{u.lastSignIn ? relativeTime(u.lastSignIn) : "Jamais"}</td>
                 <td className="px-5 py-3 text-right">
                   <div className="flex items-center justify-end gap-1.5">
-                    <button
-                      onClick={() => handleRoleChange(u.id, u.role === "admin" ? "user" : "admin")}
-                      disabled={updatingRole === u.id || u.id === currentUserId}
-                      className="px-3 py-1.5 text-[10px] rounded-lg border hover:bg-muted disabled:opacity-30 transition-colors font-medium"
+                    {assignableRoles.map((role) => <button
+                      key={role}
+                      onClick={() => handleRoleToggle(u, role)}
+                      disabled={updatingRole === u.id || u.id === currentUserId || u.roles.includes("super_admin")}
+                      className={`px-2 py-1.5 text-[10px] rounded-lg border hover:bg-muted disabled:opacity-30 transition-colors font-medium ${u.roles.includes(role) ? "bg-[#152a6b] text-white" : ""}`}
                     >
-                      {updatingRole === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : u.role === "admin" ? "Retirer admin" : "Promouvoir"}
-                    </button>
+                      {updatingRole === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : ROLE_LABELS[role]}
+                    </button>)}
                     <button
                       onClick={() => handleDelete(u.id)}
                       disabled={deletingUser === u.id || u.id === currentUserId}
@@ -712,6 +728,22 @@ const CATEGORIES_BY_TYPE: Record<string, string[]> = {
   text: ["Etudes bibliques", "Meditations", "Articles", "Notes de predication"],
 };
 
+const EDITORIAL_STATUS_LABELS: Record<EditorialStatus, string> = {
+  draft: "Brouillon",
+  in_review: "En revue",
+  scheduled: "Planifie",
+  published: "Publie",
+  archived: "Archive",
+};
+
+const EDITORIAL_STATUS_STYLES: Record<EditorialStatus, string> = {
+  draft: "bg-slate-100 text-slate-700",
+  in_review: "bg-amber-100 text-amber-800",
+  scheduled: "bg-violet-100 text-violet-800",
+  published: "bg-emerald-100 text-emerald-800",
+  archived: "bg-zinc-200 text-zinc-700",
+};
+
 function ContentSection({ messages, series, setMessages, setSeries, accessToken, navigate }: any) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -721,13 +753,50 @@ function ContentSection({ messages, series, setMessages, setSeries, accessToken,
   const [showAddMessage, setShowAddMessage] = useState(false);
   const [showAddSeries, setShowAddSeries] = useState(false);
 
+  const replaceMessage = (updated: Message) => setMessages((previous: Message[]) => previous.map((item) => item.id === updated.id ? updated : item));
+  const replaceSeries = (updated: Series) => setSeries((previous: Series[]) => previous.map((item) => item.id === updated.id ? updated : item));
+  const transitionEntity = async (kind: "message" | "series", id: string, status: EditorialStatus) => {
+    let scheduledAt: string | undefined;
+    if (status === "scheduled") {
+      const input = window.prompt("Date de publication (ex. 2026-08-22T09:00:00Z) :");
+      if (!input) return;
+      scheduledAt = input;
+    }
+    try {
+      const updated = kind === "message"
+        ? await transitionMessage(id, status, accessToken, scheduledAt)
+        : await transitionSeries(id, status, accessToken, scheduledAt);
+      if (kind === "message") replaceMessage(updated as Message);
+      else replaceSeries(updated as Series);
+      toast.success(`Statut mis a jour : ${EDITORIAL_STATUS_LABELS[status]}`);
+    } catch (error: any) {
+      toast.error(error.message || "Transition editoriale impossible");
+    }
+  };
+
+  const availableTransitions = (status: EditorialStatus): EditorialStatus[] => {
+    const transitions: Record<EditorialStatus, EditorialStatus[]> = {
+    draft: ["in_review", "archived"],
+    in_review: ["draft", "scheduled", "published", "archived"],
+    scheduled: ["draft", "in_review", "published", "archived"],
+    published: ["draft", "archived"],
+    archived: ["draft"],
+    };
+    return transitions[status];
+  };
+
   const filtered = messages.filter((m: Message) => {
     const matchSearch = m.title.toLowerCase().includes(search.toLowerCase()) || m.author.toLowerCase().includes(search.toLowerCase());
     const matchType = typeFilter === "all" || m.type === typeFilter;
     return matchSearch && matchType;
   });
 
-  const toggleSelect = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleSelect = (id: string) => setSelected((previous) => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
   const toggleSelectAll = () => { if (selected.size === filtered.length) setSelected(new Set()); else setSelected(new Set(filtered.map((m: Message) => m.id))); };
 
   const handleBulkDelete = async () => {
@@ -794,6 +863,7 @@ function ContentSection({ messages, series, setMessages, setSeries, accessToken,
                   <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Message</th>
                   <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Type</th>
                   <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Categorie</th>
+                  <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Statut</th>
                   <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Date</th>
                   <th className="text-right text-[11px] font-semibold text-muted-foreground px-4 py-3">Actions</th>
                 </tr>
@@ -813,11 +883,19 @@ function ContentSection({ messages, series, setMessages, setSeries, accessToken,
                     </td>
                     <td className="px-4 py-3"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${typeColor(m.type)}`}>{m.type}</span></td>
                     <td className="px-4 py-3 text-[11px] text-muted-foreground">{m.category}</td>
+                    <td className="px-4 py-3"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${EDITORIAL_STATUS_STYLES[m.status]}`}>{EDITORIAL_STATUS_LABELS[m.status]}</span></td>
                     <td className="px-4 py-3 text-[11px] text-muted-foreground">{new Date(m.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1">
                         <button onClick={() => navigate(`/message/${m.id}`)} className="w-7 h-7 rounded-lg border hover:bg-muted flex items-center justify-center"><Eye className="w-3 h-3" /></button>
-                        <button onClick={async () => { if (!confirm("Supprimer ?")) return; await deleteMessage(m.id, accessToken); setMessages((p: Message[]) => p.filter(x => x.id !== m.id)); toast.success("Supprime"); }} className="w-7 h-7 rounded-lg border border-[#9b1b30]/20 hover:bg-[#9b1b30]/10 flex items-center justify-center"><Trash2 className="w-3 h-3 text-[#9b1b30]" /></button>
+                        <button onClick={async () => {
+                          const updated = await updateMessage(m.id, { offlineDownloadable: !m.offlineDownloadable }, accessToken);
+                          if (updated) setMessages((items: Message[]) => items.map((item) => item.id === m.id ? updated : item));
+                        }} className={`px-2 py-1 rounded-lg border text-[10px] ${m.offlineDownloadable ? "text-emerald-700 border-emerald-200" : "text-muted-foreground"}`}>
+                          {m.offlineDownloadable ? "Hors ligne autorise" : "Hors ligne bloque"}
+                        </button>
+                        {availableTransitions(m.status).map((status) => <button key={status} onClick={() => transitionEntity("message", m.id, status)} className="px-2 py-1 rounded-lg border text-[10px] hover:bg-muted">{EDITORIAL_STATUS_LABELS[status]}</button>)}
+                        {m.status === "draft" && <button onClick={async () => { if (!confirm("Supprimer ce brouillon ?")) return; await deleteMessage(m.id, accessToken); setMessages((p: Message[]) => p.filter(x => x.id !== m.id)); toast.success("Brouillon supprime"); }} className="w-7 h-7 rounded-lg border border-[#9b1b30]/20 hover:bg-[#9b1b30]/10 flex items-center justify-center"><Trash2 className="w-3 h-3 text-[#9b1b30]" /></button>}
                       </div>
                     </td>
                   </tr>
@@ -851,12 +929,14 @@ function ContentSection({ messages, series, setMessages, setSeries, accessToken,
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-semibold text-foreground truncate">{s.title}</p>
                     <p className="text-[10px] text-muted-foreground">{s.author} · {s.totalModules} modules</p>
+                    <span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full font-medium ${EDITORIAL_STATUS_STYLES[s.status]}`}>{EDITORIAL_STATUS_LABELS[s.status]}</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground line-clamp-2 mb-3">{s.description}</p>
                 <div className="flex gap-2">
                   <button onClick={() => navigate(`/series/${s.id}`)} className="flex-1 py-2 text-[11px] bg-muted rounded-lg text-center hover:bg-muted/80 font-medium">Voir</button>
-                  <button onClick={async () => { if (!confirm("Supprimer cette serie ?")) return; await deleteSeries(s.id, accessToken); setSeries((p: Series[]) => p.filter(x => x.id !== s.id)); toast.success("Serie supprimee"); }} className="py-2 px-4 text-[11px] bg-[#9b1b30]/10 text-[#9b1b30] rounded-lg hover:bg-[#9b1b30]/20 font-medium">Supprimer</button>
+                  {availableTransitions(s.status).map((status) => <button key={status} onClick={() => transitionEntity("series", s.id, status)} className="py-2 px-2 text-[10px] border rounded-lg hover:bg-muted">{EDITORIAL_STATUS_LABELS[status]}</button>)}
+                  {s.status === "draft" && <button onClick={async () => { if (!confirm("Supprimer ce brouillon ?")) return; await deleteSeries(s.id, accessToken); setSeries((p: Series[]) => p.filter(x => x.id !== s.id)); toast.success("Brouillon supprime"); }} className="py-2 px-4 text-[11px] bg-[#9b1b30]/10 text-[#9b1b30] rounded-lg hover:bg-[#9b1b30]/20 font-medium">Supprimer</button>}
                 </div>
               </Card>
             ))}
@@ -901,7 +981,7 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
 
       const msg = await createMessage(formData, accessToken);
       if (msg) {
-        toast.success(`Message "${title.trim()}" publie avec succes !`);
+        toast.success(`Brouillon "${title.trim()}" cree avec succes !`);
         onCreated(msg);
       }
     } catch (e: any) { toast.error(`Erreur: ${e.message}`); } finally { setPublishing(false); }
@@ -916,7 +996,7 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
   return (
     <Card className="p-6 border-l-4 border-l-[#152a6b]">
       <h3 className="text-[14px] font-semibold text-foreground flex items-center gap-2 mb-5">
-        <Plus className="w-4 h-4 text-[#152a6b]" /> Publier un nouveau message
+        <Plus className="w-4 h-4 text-[#152a6b]" /> Creer un brouillon de message
       </h3>
 
       {/* Type selector */}
@@ -1004,7 +1084,7 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
       {/* Submit */}
       <div className="flex items-center gap-3">
         <button onClick={handleSubmit} disabled={publishing || !canSubmit} className="px-5 py-2.5 bg-[#152a6b] text-white rounded-xl text-[12px] font-semibold flex items-center gap-2 disabled:opacity-50 active:scale-[0.98]">
-          {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Publier le message
+          {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Enregistrer le brouillon
         </button>
         {!canSubmit && <p className="text-[10px] text-muted-foreground">Remplissez les champs marques * pour publier</p>}
       </div>
@@ -1059,7 +1139,7 @@ function CreateSeriesForm({ accessToken, messages, onCreated }: { accessToken: s
         messageIds: selectedMsgIds,
       }, accessToken);
       if (s) {
-        toast.success(`Programme "${title.trim()}" cree avec ${selectedMsgIds.length} modules !`);
+        toast.success(`Brouillon de programme "${title.trim()}" cree avec ${selectedMsgIds.length} modules !`);
         onCreated(s);
       }
     } catch (e: any) { toast.error(`Erreur: ${e.message}`); } finally { setCreating(false); }
@@ -1282,6 +1362,10 @@ function ConfigSection({ config, setConfig, accessToken }: { config: AppConfig |
           <div>
             <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Taille max upload (Mo)</label>
             <input type="number" value={form.maxUploadSizeMb || 100} onChange={e => setForm({ ...form, maxUploadSizeMb: parseInt(e.target.value) })} className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Quota hors ligne par appareil (Mo)</label>
+            <input type="number" min={50} max={2048} value={form.maxOfflineStorageMb || 1024} onChange={e => setForm({ ...form, maxOfflineStorageMb: parseInt(e.target.value) })} className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
           </div>
           <div>
             <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Langue par defaut</label>
