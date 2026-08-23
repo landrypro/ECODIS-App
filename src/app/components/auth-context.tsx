@@ -2,6 +2,13 @@ import { createContext, useContext, useState, useEffect, type Dispatch, type Rea
 import { createClient, type Session, type User } from "@supabase/supabase-js";
 import { publicAnonKey, supabaseUrl } from "../../../utils/supabase/info";
 import { fetchFavorites, fetchUserAuthorization, type AppRole } from "./api";
+import {
+  INITIAL_MFA_STATE,
+  type MfaEnrollment,
+  type MfaFactor,
+  type MfaLevel,
+  type MfaState,
+} from "../domain/mfa";
 
 const supabase = createClient(supabaseUrl, publicAnonKey);
 
@@ -15,12 +22,18 @@ interface AuthContextType {
   roles: AppRole[];
   permissions: string[];
   isAdmin: boolean;
+  mfa: MfaState;
   signIn: (email: string, password: string) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   resetPassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshFavorites: () => Promise<void>;
   refreshRole: () => Promise<void>;
+  refreshMfa: () => Promise<void>;
+  startMfaEnrollment: (friendlyName: string) => Promise<MfaEnrollment>;
+  verifyMfaEnrollment: (factorId: string, code: string) => Promise<void>;
+  verifyMfaChallenge: (factorId: string, code: string) => Promise<void>;
+  unenrollMfaFactor: (factorId: string) => Promise<void>;
   setFavorites: Dispatch<SetStateAction<string[]>>;
 }
 
@@ -34,14 +47,34 @@ const AuthContext = createContext<AuthContextType>({
   roles: ["user"],
   permissions: [],
   isAdmin: false,
+  mfa: INITIAL_MFA_STATE,
   signIn: async () => {},
   requestPasswordReset: async () => {},
   resetPassword: async () => {},
   signOut: async () => {},
   refreshFavorites: async () => {},
   refreshRole: async () => {},
+  refreshMfa: async () => {},
+  startMfaEnrollment: async () => ({ factorId: "", qrCode: "" }),
+  verifyMfaEnrollment: async () => {},
+  verifyMfaChallenge: async () => {},
+  unenrollMfaFactor: async () => {},
   setFavorites: () => {},
 });
+
+function normalizeMfaLevel(value: unknown): MfaLevel {
+  return value === "aal1" || value === "aal2" ? value : null;
+}
+
+function mapMfaFactors(data: any): MfaFactor[] {
+  return [...(data?.totp ?? []), ...(data?.phone ?? [])].map((factor: any) => ({
+    id: factor.id,
+    factorType: factor.factor_type === "phone" ? "phone" : "totp",
+    friendlyName: factor.friendly_name ?? null,
+    status: factor.status ?? "unverified",
+    createdAt: factor.created_at ?? null,
+  }));
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -51,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AppRole>("user");
   const [roles, setRoles] = useState<AppRole[]>(["user"]);
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [mfa, setMfa] = useState<MfaState>(INITIAL_MFA_STATE);
 
   const accessToken = session?.access_token || null;
   const isAdmin = roles.includes("admin") || roles.includes("super_admin");
@@ -76,11 +110,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (accessToken) {
       void refreshFavorites();
       void refreshRole();
+      void refreshMfa();
     } else {
       setFavorites([]);
       setRole("user");
       setRoles(["user"]);
       setPermissions([]);
+      setMfa(INITIAL_MFA_STATE);
     }
   }, [accessToken]);
 
@@ -96,6 +132,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole(authorization.role);
     setRoles(authorization.roles);
     setPermissions(authorization.permissions);
+  };
+
+  const refreshMfa = async () => {
+    if (!accessToken) return;
+    setMfa((current) => ({ ...current, isLoading: true }));
+    try {
+      const [{ data: assurance, error: assuranceError }, { data: factors, error: factorsError }] = await Promise.all([
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+        supabase.auth.mfa.listFactors(),
+      ]);
+      if (assuranceError) throw assuranceError;
+      if (factorsError) throw factorsError;
+      setMfa({
+        isLoading: false,
+        currentLevel: normalizeMfaLevel(assurance?.currentLevel),
+        nextLevel: normalizeMfaLevel(assurance?.nextLevel),
+        factors: mapMfaFactors(factors),
+      });
+    } catch (error) {
+      console.error("MFA status refresh failed:", error);
+      setMfa({ ...INITIAL_MFA_STATE, isLoading: false });
+    }
+  };
+
+  const refreshSessionAndMfa = async () => {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error) throw error;
+    setSession(data.session);
+    setUser(data.user ?? data.session?.user ?? null);
+    await refreshMfa();
+  };
+
+  const verifyMfaCode = async (factorId: string, code: string) => {
+    const normalizedCode = code.replace(/\D/g, "");
+    if (normalizedCode.length !== 6) throw new Error("Saisissez les six chiffres de votre application d'authentification.");
+    const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId });
+    if (challengeError) throw challengeError;
+    const { error: verifyError } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code: normalizedCode });
+    if (verifyError) throw verifyError;
+    await refreshSessionAndMfa();
+  };
+
+  const startMfaEnrollment = async (friendlyName: string): Promise<MfaEnrollment> => {
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      friendlyName: friendlyName.trim().slice(0, 64) || "ECODIS Authenticator",
+    });
+    if (error) throw error;
+    if (!data?.id || !data.totp?.qr_code) throw new Error("Le QR code MFA n'a pas pu être généré.");
+    return { factorId: data.id, qrCode: data.totp.qr_code };
+  };
+
+  const verifyMfaEnrollment = async (factorId: string, code: string) => {
+    await verifyMfaCode(factorId, code);
+  };
+
+  const verifyMfaChallenge = async (factorId: string, code: string) => {
+    await verifyMfaCode(factorId, code);
+  };
+
+  const unenrollMfaFactor = async (factorId: string) => {
+    const { error } = await supabase.auth.mfa.unenroll({ factorId });
+    if (error) throw error;
+    await refreshSessionAndMfa();
   };
 
   const signIn = async (email: string, password: string) => {
@@ -125,6 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole("user");
     setRoles(["user"]);
     setPermissions([]);
+    setMfa(INITIAL_MFA_STATE);
   };
 
   const signOut = async () => {
@@ -135,6 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole("user");
     setRoles(["user"]);
     setPermissions([]);
+    setMfa(INITIAL_MFA_STATE);
   };
 
   return (
@@ -149,12 +251,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roles,
         permissions,
         isAdmin,
+        mfa,
         signIn,
         requestPasswordReset,
         resetPassword,
         signOut,
         refreshFavorites,
         refreshRole,
+        refreshMfa,
+        startMfaEnrollment,
+        verifyMfaEnrollment,
+        verifyMfaChallenge,
+        unenrollMfaFactor,
         setFavorites,
       }}
     >

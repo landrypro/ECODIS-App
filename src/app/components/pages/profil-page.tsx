@@ -22,10 +22,11 @@ import {
   Globe,
   MonitorSmartphone,
   LayoutDashboard,
+  KeyRound,
 } from "lucide-react";
 
 export function ProfilPage() {
-  const { user, signOut, favorites, isAdmin, roles } = useAuth();
+  const { user, signOut, favorites, isAdmin, roles, mfa } = useAuth();
   const { downloads, storageUsed } = useDownloads();
   const { platform, standalone, canInstall, installApp } = usePlatform();
   const navigate = useNavigate();
@@ -181,6 +182,17 @@ export function ProfilPage() {
             Administration
           </p>
           <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+            <button
+              onClick={() => navigate("/security/mfa")}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-muted transition-colors border-b border-border"
+            >
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${mfa.currentLevel === "aal2" ? "bg-emerald-500/10" : "bg-amber-500/10"}`}>
+                <KeyRound className={`w-4 h-4 ${mfa.currentLevel === "aal2" ? "text-emerald-700" : "text-amber-600"}`} />
+              </div>
+              <span className="flex-1 text-[13px] text-card-foreground font-medium">Sécurité MFA</span>
+              <span className={`text-[10px] font-medium ${mfa.currentLevel === "aal2" ? "text-emerald-700" : "text-amber-700"}`}>{mfa.currentLevel === "aal2" ? "Vérifiée" : "À configurer"}</span>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
             <button
               onClick={() => navigate("/admin/dashboard")}
               className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-muted transition-colors border-b border-border"

@@ -1,4 +1,4 @@
-/* global console, fetch, File, FormData, process, URL */
+/* global console, fetch, File, FormData, process, URL, setTimeout */
 
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";

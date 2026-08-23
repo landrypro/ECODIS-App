@@ -42,6 +42,13 @@ test("reinitialisation : un lien sans session est refuse", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Demander un nouveau lien" })).toBeVisible();
 });
 
+test("securite MFA : la page est accessible et protege un visiteur", async ({ page }) => {
+  await page.goto("/security/mfa");
+
+  await expect(page.getByText("Sécurité MFA", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Se connecter" })).toBeVisible();
+});
+
 test("inscription : le lien vers la connexion fonctionne", async ({ page }) => {
   await page.goto("/signup");
 

@@ -17,6 +17,7 @@ import { SeriesListPage } from "./components/pages/series-list-page";
 import { SeriesDetailPage } from "./components/pages/series-detail-page";
 import { AdminStatsPage } from "./components/pages/admin-stats-page";
 import { AdminDashboardPage } from "./components/pages/admin-dashboard-page";
+import { MfaSecurityPage } from "./components/pages/mfa-security-page";
 
 export const router = createBrowserRouter([
   {
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
   { path: "/signup", Component: SignupPage },
   { path: "/forgot-password", Component: ForgotPasswordPage },
   { path: "/reset-password", Component: ResetPasswordPage },
+  { path: "/security/mfa", Component: MfaSecurityPage },
   { path: "/message/:id", Component: DetailPage },
   { path: "/admin", Component: AdminPage },
   { path: "/admin/users", Component: AdminUsersPage },
