@@ -2,8 +2,22 @@ import { createClient } from "npm:@supabase/supabase-js@2.98.0";
 import { BUCKET_NAME, getRequiredEnv } from "../config.ts";
 
 const supabaseUrl = getRequiredEnv("SUPABASE_URL");
-const supabaseAnonKey = getRequiredEnv("SUPABASE_ANON_KEY");
 const supabaseServiceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+
+function getSupabasePublishableKey(): string {
+  const publishableKeys = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS")?.trim();
+  if (publishableKeys) {
+    try {
+      const defaultKey = JSON.parse(publishableKeys).default;
+      if (typeof defaultKey === "string" && defaultKey.trim()) return defaultKey.trim();
+    } catch {
+      // Le repli legacy ci-dessous est nécessaire pour les environnements locaux.
+    }
+  }
+  return getRequiredEnv("SUPABASE_ANON_KEY");
+}
+
+const supabaseAnonKey = getSupabasePublishableKey();
 
 const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey);
 const publicClient = createClient(supabaseUrl, supabaseAnonKey);
