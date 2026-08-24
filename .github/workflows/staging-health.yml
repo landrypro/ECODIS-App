@@ -1,0 +1,21 @@
+name: Staging health
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    name: Verify staging API health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the staging health endpoint
+        env:
+          STAGING_HEALTH_URL: ${{ secrets.STAGING_HEALTH_URL }}
+        run: |
+          test -n "$STAGING_HEALTH_URL"
+          curl --fail --silent --show-error --max-time 15 "$STAGING_HEALTH_URL" | grep -Eq '"status"\s*:\s*"ok"'

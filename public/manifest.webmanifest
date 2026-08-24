@@ -1,0 +1,13 @@
+{
+  "name": "ECODIS - Ecole des Disciples",
+  "short_name": "ECODIS",
+  "description": "Enseignements et parcours de l'Ecole des Disciples",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#152a6b",
+  "icons": [
+    { "src": "/logoECODIS.jpg", "sizes": "450x177", "type": "image/jpeg", "purpose": "any" }
+  ]
+}

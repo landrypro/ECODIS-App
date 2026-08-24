@@ -1,5 +1,5 @@
 import { fetchJson, getHeaders, jsonHeaders } from "./http";
-import type { Comment } from "./types";
+import type { Comment, CommentReport, CommentReportReason } from "./types";
 
 export async function fetchComments(messageId: string): Promise<Comment[]> {
   try {
@@ -38,6 +38,58 @@ export async function deleteComment(messageId: string, commentId: string, access
     console.error("Delete comment error:", error);
     throw error;
   }
+}
+
+export async function reportComment(
+  commentId: string,
+  reason: CommentReportReason,
+  detail: string,
+  accessToken: string,
+): Promise<CommentReport> {
+  const data = await fetchJson<{ report: CommentReport }>(`/comments/${commentId}/reports`, {
+    method: "POST",
+    headers: jsonHeaders(accessToken),
+    body: JSON.stringify({ reason, detail }),
+  });
+  return data.report;
+}
+
+export async function fetchModerationReports(
+  accessToken: string,
+  status: CommentReport["status"] = "open",
+): Promise<CommentReport[]> {
+  const data = await fetchJson<{ reports?: CommentReport[] }>(`/moderation/reports?status=${status}`, {
+    headers: getHeaders(accessToken),
+  });
+  return data.reports ?? [];
+}
+
+export async function moderateComment(
+  commentId: string,
+  action: "hide" | "restore" | "delete",
+  reason: string,
+  accessToken: string,
+): Promise<Comment> {
+  const data = await fetchJson<{ comment: Comment }>(`/moderation/comments/${commentId}`, {
+    method: "PUT",
+    headers: jsonHeaders(accessToken),
+    body: JSON.stringify({ action, reason }),
+  });
+  return data.comment;
+}
+
+export async function resolveCommentReport(
+  reportId: string,
+  status: "resolved" | "dismissed",
+  note: string,
+  accessToken: string,
+): Promise<CommentReport> {
+  const data = await fetchJson<{ report: CommentReport }>(`/moderation/reports/${reportId}`, {
+    method: "PUT",
+    headers: jsonHeaders(accessToken),
+    body: JSON.stringify({ status, note }),
+  });
+  return data.report;
 }
 
 export async function fetchCommentCounts(): Promise<Record<string, number>> {

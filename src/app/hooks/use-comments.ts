@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { addComment, deleteComment, fetchComments } from "../services";
+import { addComment, deleteComment, fetchComments, reportComment } from "../services";
+import type { CommentReportReason } from "../services";
 import { queryKeys } from "./query-keys";
 
 export function useComments(messageId?: string) {
@@ -26,6 +27,10 @@ export function useCommentMutations(messageId: string, accessToken?: string | nu
     deleteMutation: useMutation({
       mutationFn: (commentId: string) => deleteComment(messageId, commentId, accessToken!),
       onSuccess: refresh,
+    }),
+    reportMutation: useMutation({
+      mutationFn: ({ commentId, reason, detail }: { commentId: string; reason: CommentReportReason; detail: string }) =>
+        reportComment(commentId, reason, detail, accessToken!),
     }),
   };
 }

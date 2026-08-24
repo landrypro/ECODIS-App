@@ -4,7 +4,7 @@ import { BookOpen, User, Layers, Trophy, Sparkles, Loader2 } from "lucide-react"
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useAuth } from "../auth-context";
 import { useAllSeries, useAllSeriesProgress } from "../../hooks/use-series-data";
-import type { Series, SeriesProgress } from "../api";
+import type { Series } from "../api";
 
 export function SeriesListPage() {
   const navigate = useNavigate();
@@ -18,15 +18,16 @@ export function SeriesListPage() {
       series.map((item) => {
         const entry = progress[item.id];
         const completed = entry?.completedMessageIds?.length || 0;
-        const total = item.totalModules;
-        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-        return { ...item, completed, pct };
+        const total = entry?.totalModules ?? item.totalModules;
+        const pct = entry?.progressPercent ?? (total > 0 ? Math.round((completed / total) * 100) : 0);
+        const started = Boolean(entry && Object.keys(entry.modules ?? {}).length > 0);
+        return { ...item, totalModules: total, completed, pct, started };
       }),
     [series, progress],
   );
 
-  const inProgress = categorized.filter((item) => item.completed > 0 && item.pct < 100);
-  const notStarted = categorized.filter((item) => item.completed === 0);
+  const inProgress = categorized.filter((item) => item.started && item.pct < 100);
+  const notStarted = categorized.filter((item) => !item.started);
   const completedSeries = categorized.filter((item) => item.pct === 100);
   const recommended = notStarted[0] || inProgress[0] || null;
 
@@ -73,7 +74,7 @@ export function SeriesListPage() {
   );
 }
 
-function Section({ title, icon, items, onSelect }: { title: string; icon: React.ReactNode; items: (Series & { completed: number; pct: number })[]; onSelect: (id: string) => void; }) {
+function Section({ title, icon, items, onSelect }: { title: string; icon: React.ReactNode; items: (Series & { completed: number; pct: number; started: boolean })[]; onSelect: (id: string) => void; }) {
   return (
     <div className="px-4 mt-5">
       <div className="flex items-center gap-1.5 mb-3">{icon}<h3 className="text-[13px] font-semibold text-foreground">{title}</h3><span className="text-[11px] text-muted-foreground ml-1">({items.length})</span></div>
@@ -82,7 +83,7 @@ function Section({ title, icon, items, onSelect }: { title: string; icon: React.
   );
 }
 
-function SeriesCard({ series, onSelect }: { series: Series & { completed: number; pct: number }; onSelect: (id: string) => void; }) {
+function SeriesCard({ series, onSelect }: { series: Series & { completed: number; pct: number; started: boolean }; onSelect: (id: string) => void; }) {
   return (
     <button onClick={() => onSelect(series.id)} className="w-full bg-card rounded-xl border border-border overflow-hidden shadow-sm flex active:bg-muted transition-colors text-left">
       <div className="w-24 h-24 shrink-0 bg-muted relative">
