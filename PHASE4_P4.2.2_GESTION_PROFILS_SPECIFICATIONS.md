@@ -219,9 +219,11 @@ Le lot **P4.2.2-A** est le minimum nécessaire à la recette P4.1/P4.3. Les lots
 
 - `user_account_status` conserve le statut, le motif, les acteurs et les horodatages ; la table est protégée par RLS, sans accès `anon` ou `authenticated` ;
 - la suspension applique `ban_duration` dans Supabase Auth, bloque immédiatement les appels ECODIS authentifiés et supprime les refresh sessions du titulaire ;
+- le frontend vérifie l'accès du compte au chargement, toutes les 30 secondes et au retour sur l'onglet ; tout `401` protégé nettoie la session locale et actualise immédiatement les pages ;
 - la réactivation annule le bannissement ; le titulaire doit ouvrir une nouvelle session ;
 - l'API empêche l'auto-suspension, l'action sur un super-administrateur et la suspension d'un administrateur par un administrateur ordinaire ;
 - chaque suspension/réactivation exige un motif de 10 à 500 caractères et génère respectivement `user_suspended` ou `user_reactivated` dans l'audit ;
+- la révocation SQL est réservée au rôle `service_role` par les privilèges `EXECUTE` ; elle ne dépend pas des anciennes variables de claims PostgREST ;
 - l'interface affiche le statut et le motif, puis permet l'action autorisée depuis la fiche utilisateur.
 
 ## 9. Critères d'acceptation et recette

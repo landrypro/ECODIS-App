@@ -9,7 +9,8 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.integration.test.ts"],
     // Un seul worker thread évite les délais de démarrage des processus forks sous Windows/OneDrive.
     pool: "threads",
-    singleThread: true,
+    maxWorkers: 1,
+    isolate: false,
     clearMocks: true,
     restoreMocks: true,
   },

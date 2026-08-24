@@ -1,9 +1,10 @@
 import { mapAuditLog } from "./mappers.ts";
+import { writeLog } from "./observability.ts";
 import { supabaseAdmin } from "./supabase.ts";
 
 export async function logAudit(userId: string | null, userEmail: string, action: string, description: string, metadata: unknown = {}) {
   try {
-    await supabaseAdmin().from("audit_logs").insert({
+    const { error } = await supabaseAdmin().from("audit_logs").insert({
       user_id: userId,
       user_email: userEmail ?? "",
       action,
@@ -11,8 +12,13 @@ export async function logAudit(userId: string | null, userEmail: string, action:
       metadata,
       created_at: new Date().toISOString(),
     });
+    if (error) throw error;
   } catch (error) {
-    console.log("Audit log error:", error);
+    writeLog("error", "audit_write_failed", {
+      action,
+      actorId: userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

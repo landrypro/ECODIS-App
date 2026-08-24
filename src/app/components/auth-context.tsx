@@ -1,7 +1,9 @@
-import { createContext, useContext, useState, useEffect, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { createContext, useCallback, useContext, useState, useEffect, useRef, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { createClient, type Session, type User } from "@supabase/supabase-js";
+import { toast } from "sonner";
 import { publicAnonKey, supabaseUrl } from "../../../utils/supabase/info";
-import { fetchFavorites, fetchUserAuthorization, type AppRole } from "./api";
+import { fetchFavorites, fetchUserAuthorization, verifyCurrentAccountAccess, type AppRole } from "./api";
+import { SESSION_REJECTED_EVENT } from "../services/http";
 import {
   INITIAL_MFA_STATE,
   type MfaEnrollment,
@@ -85,9 +87,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<AppRole[]>(["user"]);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [mfa, setMfa] = useState<MfaState>(INITIAL_MFA_STATE);
+  const sessionCheckInProgress = useRef(false);
+  const sessionRejectionInProgress = useRef(false);
 
   const accessToken = session?.access_token || null;
   const isAdmin = roles.includes("admin") || roles.includes("super_admin");
+
+  const resetAuthState = useCallback(() => {
+    setSession(null);
+    setUser(null);
+    setFavorites([]);
+    setRole("user");
+    setRoles(["user"]);
+    setPermissions([]);
+    setMfa(INITIAL_MFA_STATE);
+  }, []);
+
+  const rejectCurrentSession = useCallback(async () => {
+    if (sessionRejectionInProgress.current) return;
+    sessionRejectionInProgress.current = true;
+    try {
+      const { error } = await supabase.auth.signOut({ scope: "local" });
+      if (error) console.error("Local sign out after session rejection failed:", error);
+      resetAuthState();
+      toast.error("Votre session n’est plus active. Veuillez contacter un administrateur.");
+    } finally {
+      sessionRejectionInProgress.current = false;
+    }
+  }, [resetAuthState]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -119,6 +146,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMfa(INITIAL_MFA_STATE);
     }
   }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const checkAccountAccess = async () => {
+      if (sessionCheckInProgress.current) return;
+      sessionCheckInProgress.current = true;
+      try {
+        await verifyCurrentAccountAccess(accessToken);
+      } catch (error: any) {
+        // Les 401 sont traités par l'événement global émis dans fetchJson.
+        if (error?.status !== 401) console.error("Account access verification failed:", error);
+      } finally {
+        sessionCheckInProgress.current = false;
+      }
+    };
+    const onSessionRejected = () => void rejectCurrentSession();
+    const onFocus = () => void checkAccountAccess();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void checkAccountAccess();
+    };
+
+    const intervalId = window.setInterval(() => void checkAccountAccess(), 30_000);
+    window.addEventListener(SESSION_REJECTED_EVENT, onSessionRejected);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void checkAccountAccess();
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener(SESSION_REJECTED_EVENT, onSessionRejected);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [accessToken, rejectCurrentSession]);
 
   const refreshFavorites = async () => {
     if (!accessToken) return;
@@ -219,24 +281,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
     const { error: signOutError } = await supabase.auth.signOut({ scope: "global" });
     if (signOutError) console.error("Global sign out after password reset failed:", signOutError);
-    setSession(null);
-    setUser(null);
-    setFavorites([]);
-    setRole("user");
-    setRoles(["user"]);
-    setPermissions([]);
-    setMfa(INITIAL_MFA_STATE);
+    resetAuthState();
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setSession(null);
-    setUser(null);
-    setFavorites([]);
-    setRole("user");
-    setRoles(["user"]);
-    setPermissions([]);
-    setMfa(INITIAL_MFA_STATE);
+    resetAuthState();
   };
 
   return (

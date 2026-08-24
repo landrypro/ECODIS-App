@@ -72,3 +72,5 @@ Avant d'activer ou de conserver `APP_REQUIRE_ADMIN_MFA=true` en staging ou produ
 ## Extension P4.2.2-A : gestion unifiée des rôles
 
 Le point d'entrée `/admin/users` utilise maintenant la gestion moderne des rôles cumulables. Il affiche les permissions effectives, exige un motif de 10 à 500 caractères et n'appelle plus l'endpoint historique de rôle unique. L'API refuse également l'auto-modification de rôles. Le lot P4.2.2-B ajoute l'invitation, son renvoi et l'envoi d'un lien de réinitialisation sans mot de passe administrateur. Le lot P4.2.2-C ajoute la suspension, la réactivation et la révocation des refresh sessions ; seule l'administration complète du profil relève désormais de P4.2.2-D. Les exigences détaillées et les critères de recette sont consignées dans `PHASE4_P4.2.2_GESTION_PROFILS_SPECIFICATIONS.md`.
+
+La correction P4.2.2-C du 24 août 2026 réserve l'exécution de `revoke_user_sessions` au rôle PostgreSQL `service_role` sans dépendre de l'ancienne variable `request.jwt.claim.role`. Le client réagit globalement aux réponses `401` et contrôle périodiquement l'accès du compte afin qu'une suspension mette aussi à jour une session déjà ouverte.

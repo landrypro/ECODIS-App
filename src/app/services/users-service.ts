@@ -45,6 +45,10 @@ export async function fetchUserAuthorization(accessToken: string): Promise<UserA
   }
 }
 
+export async function verifyCurrentAccountAccess(accessToken: string): Promise<void> {
+  await fetchJson("/users/me/role", { headers: getHeaders(accessToken) });
+}
+
 export async function fetchAllUsers(accessToken: string): Promise<AppUser[]> {
   try {
     const data = await fetchJson<{ users?: AppUser[] }>("/users", {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BASE, fetchJson, getHeaders, jsonHeaders } from "./http";
+import { BASE, fetchJson, getHeaders, jsonHeaders, SESSION_REJECTED_EVENT } from "./http";
 
 describe("service HTTP", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -21,5 +21,14 @@ describe("service HTTP", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Acces refuse" }), { status: 403 })));
 
     await expect(fetchJson("/admin")).rejects.toThrow("Acces refuse");
+  });
+
+  it("signale globalement une session refusée", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 })));
+    const listener = vi.fn();
+    window.addEventListener(SESSION_REJECTED_EVENT, listener, { once: true });
+
+    await expect(fetchJson("/users/me/role")).rejects.toThrow("Unauthorized");
+    expect(listener).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BASE } from "./http";
-import { inviteUser, requestUserPasswordReset, resendUserInvitation, updateUserAccountStatus } from "./users-service";
+import { inviteUser, requestUserPasswordReset, resendUserInvitation, updateUserAccountStatus, verifyCurrentAccountAccess } from "./users-service";
 
 describe("services de comptes administrés", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -36,6 +36,16 @@ describe("services de comptes administrés", () => {
     expect(fetchMock).toHaveBeenCalledWith(`${BASE}/users/user-42/status`, expect.objectContaining({
       method: "PUT",
       body: JSON.stringify({ status: "suspended", reason: "Non-respect répété de la charte" }),
+    }));
+  });
+
+  it("vérifie l'accès du compte courant via l'API protégée", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ role: "user" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(verifyCurrentAccountAccess("token-user")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/users/me/role`, expect.objectContaining({
+      headers: expect.any(Object),
     }));
   });
 });
