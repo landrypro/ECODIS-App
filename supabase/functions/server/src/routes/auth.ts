@@ -63,6 +63,29 @@ authRoutes.get("/users/me/role", async (c) => {
   }
 });
 
+authRoutes.put("/users/me/profile", async (c) => {
+  try {
+    const user = await getUser(c.req.raw);
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const { name } = await c.req.json();
+    const validatedName = validateRequiredString(name, "Nom", 2, 120);
+    const { data, error } = await supabaseAdmin().auth.admin.updateUserById(user.id, {
+      user_metadata: { ...(user.user_metadata ?? {}), name: validatedName },
+    });
+    if (error) throw error;
+
+    await ensureUserRoleRecord(data.user ?? user, validatedName);
+    await logAudit(user.id, user.email || "", "profile_updated", "Profil personnel mis à jour", {
+      fields: ["name"],
+    });
+
+    return c.json({ user: { id: user.id, name: validatedName } });
+  } catch (error) {
+    return handleApiError(c, error, "Update own profile error");
+  }
+});
+
 authRoutes.get("/users", async (c) => {
   try {
     const { user, error: authError } = await requireAdmin(c.req.raw);

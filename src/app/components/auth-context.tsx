@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useState, useEffect, useRef, ty
 import { createClient, type Session, type User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { publicAnonKey, supabaseUrl } from "../../../utils/supabase/info";
-import { fetchFavorites, fetchUserAuthorization, verifyCurrentAccountAccess, type AppRole } from "./api";
+import { fetchFavorites, fetchUserAuthorization, updateOwnProfile, verifyCurrentAccountAccess, type AppRole } from "./api";
 import { SESSION_REJECTED_EVENT } from "../services/http";
 import {
   INITIAL_MFA_STATE,
@@ -28,6 +28,8 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   resetPassword: (password: string) => Promise<void>;
+  updateDisplayName: (name: string) => Promise<void>;
+  requestEmailChange: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshFavorites: () => Promise<void>;
   refreshRole: () => Promise<void>;
@@ -53,6 +55,8 @@ const AuthContext = createContext<AuthContextType>({
   signIn: async () => {},
   requestPasswordReset: async () => {},
   resetPassword: async () => {},
+  updateDisplayName: async () => {},
+  requestEmailChange: async () => {},
   signOut: async () => {},
   refreshFavorites: async () => {},
   refreshRole: async () => {},
@@ -284,6 +288,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resetAuthState();
   };
 
+  const updateDisplayName = async (name: string) => {
+    if (!accessToken || !user) throw new Error("Vous devez être connecté pour modifier votre profil.");
+    const updated = await updateOwnProfile(name, accessToken);
+    setUser((current) => current
+      ? { ...current, user_metadata: { ...current.user_metadata, name: updated.user.name } }
+      : current);
+  };
+
+  const requestEmailChange = async (email: string) => {
+    if (!user) throw new Error("Vous devez être connecté pour modifier votre e-mail.");
+    const redirectTo = new URL("/profil", window.location.origin).toString();
+    const { error } = await supabase.auth.updateUser(
+      { email: email.trim().toLowerCase() },
+      { emailRedirectTo: redirectTo },
+    );
+    if (error) throw error;
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     resetAuthState();
@@ -305,6 +327,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         requestPasswordReset,
         resetPassword,
+        updateDisplayName,
+        requestEmailChange,
         signOut,
         refreshFavorites,
         refreshRole,

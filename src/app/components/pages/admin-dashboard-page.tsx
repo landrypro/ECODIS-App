@@ -5,16 +5,16 @@ import { useAuth } from "../auth-context";
 import {
   fetchAdminStats, fetchAllUsers, fetchAdminMessages, fetchAdminSeries, fetchAppConfig,
   updateAppConfig, fetchAuditLogs, clearAuditLogs, fetchStorageStats,
-  updateUserRoles, deleteUser, deleteMessage, deleteSeries, bulkDeleteMessages,
+  deleteMessage, deleteSeries, bulkDeleteMessages,
   fetchSystemHealth, fetchCategories, updateCategories,
   fetchAnnouncements, createAnnouncement, deleteAnnouncement, exportDataAsJson,
-  createMessage, updateMessage, signupUser, createSeries, transitionMessage, transitionSeries,
-  AdminStats, AppRole, AppUser, Message, Series, AppConfig, AuditLog, StorageStats, EditorialStatus,
+  createMessage, updateMessage, createSeries, transitionMessage, transitionSeries,
+  AdminStats, AppUser, Message, Series, AppConfig, AuditLog, StorageStats, EditorialStatus,
   SystemHealth, Announcement,
 } from "../api";
 import {
   LayoutDashboard, Users, FileText, Settings, Shield, HardDrive, BarChart3,
-  Loader2, ShieldOff, Crown, Search, Trash2, Save, X, RefreshCw, AlertTriangle,
+  Loader2, ShieldOff, Search, Trash2, Save, X, RefreshCw, AlertTriangle,
   CheckCircle, Eye, Mic, Video, FileText as FileTextIcon, Heart, MessageSquare, Layers,
   TrendingUp, Percent, Bell, Download, Plus, ArrowLeft,
   Activity, Info, Database, ChevronRight, Tag, Send,
@@ -30,14 +30,13 @@ import { toast } from "sonner";
 
 // ==================== TYPES ====================
 type Section =
-  | "overview" | "users" | "content" | "config" | "appearance"
+  | "overview" | "content" | "config" | "appearance"
   | "categories" | "notifications" | "security" | "storage" | "stats" | "system" | "export";
 
 interface NavItem { key: Section; label: string; icon: any; group: string }
 
 const NAV_ITEMS: NavItem[] = [
   { key: "overview", label: "Vue d'ensemble", icon: LayoutDashboard, group: "Principal" },
-  { key: "users", label: "Utilisateurs", icon: Users, group: "Principal" },
   { key: "content", label: "Gestion du contenu", icon: FileText, group: "Principal" },
   { key: "stats", label: "Statistiques", icon: BarChart3, group: "Principal" },
   { key: "config", label: "Configuration", icon: Settings, group: "Parametres" },
@@ -126,7 +125,7 @@ function StatusDot({ ok }: { ok: boolean }) {
 // ==================== MAIN COMPONENT ====================
 export function AdminDashboardPage() {
   const navigate = useNavigate();
-  const { user, accessToken, isAdmin, roles, isLoading: authLoading } = useAuth();
+  const { user, accessToken, isAdmin, isLoading: authLoading } = useAuth();
   // Platform detection removed — dashboard works on all viewports
   const [activeSection, setActiveSection] = useState<Section>("overview");
   const [loading, setLoading] = useState(true);
@@ -224,8 +223,7 @@ export function AdminDashboardPage() {
                 <button
                   key={item.key}
                   onClick={() => {
-                    if (item.key === "users") navigate("/admin/users");
-                    else setActiveSection(item.key);
+                    setActiveSection(item.key);
                     setMobileSidebar(false);
                   }}
                   title={item.label}
@@ -321,7 +319,6 @@ export function AdminDashboardPage() {
           ) : (
             <>
               {activeSection === "overview" && <OverviewSection stats={stats} users={users} messages={messages} series={series} auditLogs={auditLogs} health={health} navigate={navigate} setActiveSection={setActiveSection} />}
-              {activeSection === "users" && <UsersSection users={users} setUsers={setUsers} accessToken={accessToken!} currentUserId={user.id} currentRoles={roles} />}
               {activeSection === "content" && <ContentSection messages={messages} series={series} setMessages={setMessages} setSeries={setSeries} accessToken={accessToken!} navigate={navigate} />}
               {activeSection === "config" && <ConfigSection config={config} setConfig={setConfig} accessToken={accessToken!} />}
               {activeSection === "appearance" && <AppearanceSection config={config} setConfig={setConfig} accessToken={accessToken!} />}
@@ -516,211 +513,6 @@ function OverviewSection({ stats, users, messages, series, auditLogs, health, na
           </div>
         </Card>
       </div>
-    </div>
-  );
-}
-
-// ==================== USERS ====================
-const ROLE_LABELS: Record<AppRole, string> = {
-  user: "Membre",
-  content_editor: "Éditeur",
-  moderator: "Modérateur",
-  admin: "Admin",
-  super_admin: "Super-admin",
-};
-
-function UsersSection({ users, setUsers, accessToken, currentUserId, currentRoles }: { users: AppUser[]; setUsers: any; accessToken: string; currentUserId: string; currentRoles: AppRole[] }) {
-  const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
-  const [deletingUser, setDeletingUser] = useState<string | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newEmail, setNewEmail] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [creating, setCreating] = useState(false);
-
-  const filtered = users.filter((u) => {
-    const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
-    const matchRole = roleFilter === "all" || u.role === roleFilter;
-    return matchSearch && matchRole;
-  });
-
-  const admins = users.filter((u) => u.roles.some((role) => role === "admin" || role === "super_admin")).length;
-  const assignableRoles: AppRole[] = currentRoles.includes("super_admin")
-    ? ["content_editor", "moderator", "admin"]
-    : ["content_editor", "moderator"];
-
-  const handleRoleToggle = async (target: AppUser, role: AppRole) => {
-    const nextRoles = target.roles.includes(role)
-      ? target.roles.filter((assignedRole) => assignedRole !== role)
-      : [...target.roles, role];
-    setUpdatingRole(target.id);
-    try {
-      const updated = await updateUserRoles(target.id, nextRoles, "Mise à jour depuis l'administration", accessToken);
-      setUsers((prev: AppUser[]) => prev.map((u) => u.id === target.id ? { ...u, role: updated.role, roles: updated.roles } : u));
-      toast.success("Rôles mis à jour");
-    } catch (e: any) { toast.error(e.message); } finally { setUpdatingRole(null); }
-  };
-
-  const handleDelete = async (userId: string) => {
-    if (!confirm("Supprimer cet utilisateur ? Cette action est irreversible.")) return;
-    setDeletingUser(userId);
-    try {
-      await deleteUser(userId, accessToken);
-      setUsers((prev: AppUser[]) => prev.filter((u) => u.id !== userId));
-      toast.success("Utilisateur supprime");
-    } catch (e: any) { toast.error(e.message); } finally { setDeletingUser(null); }
-  };
-
-  const handleCreateUser = async () => {
-    if (!newEmail.trim() || !newName.trim() || newPassword.length < 6) {
-      toast.error("Veuillez remplir tous les champs (mot de passe min. 6 caracteres)");
-      return;
-    }
-    setCreating(true);
-    try {
-      const result = await signupUser(newEmail.trim(), newPassword, newName.trim());
-      if (result?.user) {
-        setUsers((prev: AppUser[]) => [...prev, {
-          id: result.user.id,
-          email: result.user.email || newEmail.trim(),
-          name: newName.trim(),
-          role: result.role || "user",
-          roles: result.roles || ["user"],
-          createdAt: new Date().toISOString(),
-          lastSignIn: null,
-        }]);
-        toast.success(`Utilisateur "${newName.trim()}" cree avec succes`);
-        setNewEmail("");
-        setNewName("");
-        setNewPassword("");
-        setShowCreateForm(false);
-      }
-    } catch (e: any) { toast.error(`Erreur: ${e.message}`); } finally { setCreating(false); }
-  };
-
-  return (
-    <div className="space-y-5">
-      <SectionHeader icon={Users} title="Gestion des utilisateurs" actions={
-        <button onClick={() => setShowCreateForm(!showCreateForm)} className="px-4 py-2 bg-[#152a6b] text-white rounded-xl text-[12px] font-semibold flex items-center gap-1.5 active:scale-[0.98]">
-          {showCreateForm ? <X className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
-          {showCreateForm ? "Annuler" : "Creer un utilisateur"}
-        </button>
-      } />
-
-      {/* Create user form */}
-      {showCreateForm && (
-        <Card className="p-6 border-l-4 border-l-[#152a6b]">
-          <h3 className="text-[14px] font-semibold text-foreground flex items-center gap-2 mb-4">
-            <UserPlus className="w-4 h-4 text-[#152a6b]" /> Creer un nouvel utilisateur
-          </h3>
-          <div className="grid md:grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Nom complet *</label>
-              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jean Dupont" className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Email *</label>
-              <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="jean@eglise.org" className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Mot de passe * (min 6 car.)</label>
-              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="••••••" className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={handleCreateUser} disabled={creating || !newEmail.trim() || !newName.trim() || newPassword.length < 6} className="px-5 py-2.5 bg-[#152a6b] text-white rounded-xl text-[12px] font-semibold flex items-center gap-2 disabled:opacity-50 active:scale-[0.98]">
-              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />} Creer le compte
-            </button>
-            <p className="text-[10px] text-muted-foreground">L'utilisateur sera cree avec le role "Membre". Vous pourrez le promouvoir admin apres creation.</p>
-          </div>
-        </Card>
-      )}
-
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
-        <KpiCard icon={Users} label="Total utilisateurs" value={users.length} color="bg-[#152a6b]/10 text-[#152a6b]" />
-        <KpiCard icon={Crown} label="Administrateurs" value={admins} color="bg-amber-100 text-amber-600" />
-        <KpiCard icon={Users} label="Membres" value={users.length - admins} color="bg-[#4a6fa5]/10 text-[#4a6fa5]" />
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher par nom ou email..." className="w-full pl-10 pr-4 py-2.5 bg-white rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
-        </div>
-        <div className="flex gap-1">
-          {["all", "admin", "user"].map(r => (
-            <button key={r} onClick={() => setRoleFilter(r)} className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors ${roleFilter === r ? "bg-[#152a6b] text-white" : "bg-white border text-muted-foreground hover:text-foreground"}`}>
-              {r === "all" ? "Tous" : r === "admin" ? "Admins" : "Membres"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Table */}
-      <Card className="overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border bg-muted/30">
-              <th className="text-left text-[11px] font-semibold text-muted-foreground px-5 py-3">Utilisateur</th>
-              <th className="text-left text-[11px] font-semibold text-muted-foreground px-5 py-3">Role</th>
-              <th className="text-left text-[11px] font-semibold text-muted-foreground px-5 py-3">Inscription</th>
-              <th className="text-left text-[11px] font-semibold text-muted-foreground px-5 py-3">Derniere connexion</th>
-              <th className="text-right text-[11px] font-semibold text-muted-foreground px-5 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((u) => (
-              <tr key={u.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold ${u.role === "admin" ? "bg-amber-100 text-amber-700" : "bg-[#152a6b]/10 text-[#152a6b]"}`}>
-                      {u.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-medium text-foreground">
-                        {u.name}
-                        {u.id === currentUserId && <span className="text-[9px] bg-[#152a6b]/10 text-[#152a6b] px-1.5 py-0.5 rounded ml-1.5">Vous</span>}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">{u.email}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-5 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    {u.roles.map((role) => <span key={role} className={`text-[10px] px-2 py-1 rounded-full font-semibold ${role === "admin" || role === "super_admin" ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>{ROLE_LABELS[role]}</span>)}
-                  </div>
-                </td>
-                <td className="px-5 py-3 text-[11px] text-muted-foreground">{new Date(u.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}</td>
-                <td className="px-5 py-3 text-[11px] text-muted-foreground">{u.lastSignIn ? relativeTime(u.lastSignIn) : "Jamais"}</td>
-                <td className="px-5 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1.5">
-                    {assignableRoles.map((role) => <button
-                      key={role}
-                      onClick={() => handleRoleToggle(u, role)}
-                      disabled={updatingRole === u.id || u.id === currentUserId || u.roles.includes("super_admin")}
-                      className={`px-2 py-1.5 text-[10px] rounded-lg border hover:bg-muted disabled:opacity-30 transition-colors font-medium ${u.roles.includes(role) ? "bg-[#152a6b] text-white" : ""}`}
-                    >
-                      {updatingRole === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : ROLE_LABELS[role]}
-                    </button>)}
-                    <button
-                      onClick={() => handleDelete(u.id)}
-                      disabled={deletingUser === u.id || u.id === currentUserId}
-                      className="w-8 h-8 rounded-lg border border-[#9b1b30]/20 hover:bg-[#9b1b30]/10 flex items-center justify-center disabled:opacity-30 transition-colors"
-                    >
-                      {deletingUser === u.id ? <Loader2 className="w-3 h-3 animate-spin text-[#9b1b30]" /> : <Trash2 className="w-3.5 h-3.5 text-[#9b1b30]" />}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {filtered.length === 0 && <div className="text-center py-12 text-muted-foreground text-sm">Aucun utilisateur trouve</div>}
-      </Card>
     </div>
   );
 }

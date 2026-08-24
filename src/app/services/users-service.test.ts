@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BASE } from "./http";
-import { inviteUser, requestUserPasswordReset, resendUserInvitation, updateUserAccountStatus, verifyCurrentAccountAccess } from "./users-service";
+import { inviteUser, requestUserPasswordReset, resendUserInvitation, updateOwnProfile, updateUserAccountStatus, verifyCurrentAccountAccess } from "./users-service";
 
 describe("services de comptes administrés", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -46,6 +46,17 @@ describe("services de comptes administrés", () => {
     await expect(verifyCurrentAccountAccess("token-user")).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledWith(`${BASE}/users/me/role`, expect.objectContaining({
       headers: expect.any(Object),
+    }));
+  });
+
+  it("met à jour uniquement le nom du profil courant via la route dédiée", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ user: { id: "user-42", name: "Marie ECODIS" } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(updateOwnProfile("Marie ECODIS", "token-user")).resolves.toMatchObject({ user: { name: "Marie ECODIS" } });
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/users/me/profile`, expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({ name: "Marie ECODIS" }),
     }));
   });
 });

@@ -1,6 +1,6 @@
 # ECODIS App — P4.2.2 : gestion des profils, comptes et habilitations
 
-**Statut :** P4.2.2-A, P4.2.2-B et P4.2.2-C implémentés localement — recette fonctionnelle à réaliser  
+**Statut :** P4.2.2-A à P4.2.2-D implémentés localement — recette fonctionnelle globale à réaliser
 **Dépendances :** P4.2 rôles cumulables, P4.2.1 MFA administrateur, Supabase Auth  
 **Objectif immédiat :** préparer, depuis l'application, les comptes de recette `content_editor` et `moderator` nécessaires à P4.1 et P4.3.
 
@@ -226,6 +226,15 @@ Le lot **P4.2.2-A** est le minimum nécessaire à la recette P4.1/P4.3. Les lots
 - la révocation SQL est réservée au rôle `service_role` par les privilèges `EXECUTE` ; elle ne dépend pas des anciennes variables de claims PostgREST ;
 - l'interface affiche le statut et le motif, puis permet l'action autorisée depuis la fiche utilisateur.
 
+### État de réalisation P4.2.2-D
+
+- `/profil` devient le parcours personnel de référence : le titulaire consulte son identité, ses dates, ses rôles et ses permissions effectives en lecture seule ;
+- le nom affiché est mis à jour par `PUT /users/me/profile`, sous contrôle de l'utilisateur authentifié ; l'événement `profile_updated` ne conserve que le champ non sensible modifié ;
+- le changement d'adresse e-mail passe directement par `supabase.auth.updateUser` avec confirmation et retour vers `/profil` ; l'API d'administration n'intervient pas et ne contourne donc pas la validation Supabase Auth ;
+- le profil permet de demander son propre lien de réinitialisation ; il n'affiche, ne collecte ni ne transmet jamais de mot de passe ;
+- le tableau de bord d'administration ne propose plus la section historique Utilisateurs, ni la création d'un compte avec mot de passe ; il dirige vers `/admin/users`, point d'entrée unique pour l'administration des comptes ;
+- l'ancien endpoint `PUT /users/:id/role` reste présent uniquement pour la compatibilité P0-P3, mais aucun écran P4.2.2 ne l'appelle.
+
 ## 9. Critères d'acceptation et recette
 
 | Cas | Vérification | Résultat attendu |
@@ -244,6 +253,8 @@ Le lot **P4.2.2-A** est le minimum nécessaire à la recette P4.1/P4.3. Les lots
 | U-ADM-12 | Tenter d'agir sur un super-admin | refus ; procédure de gouvernance hors application |
 | U-ME-01 | Utilisateur change son nom | affichage mis à jour sans modifier les rôles |
 | U-ME-02 | Utilisateur demande un changement de mot de passe | parcours Auth existant, sessions invalidées après succès |
+| U-ME-03 | Utilisateur demande un changement d'e-mail | e-mail de confirmation Supabase Auth, aucune modification immédiate non confirmée |
+| U-ADM-13 | Dashboard > Utilisateurs | absence de section historique ; lien unique vers `/admin/users` ; aucun formulaire de mot de passe tiers |
 
 ## 10. Conditions de conception validées
 

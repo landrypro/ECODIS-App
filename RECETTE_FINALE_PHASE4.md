@@ -118,6 +118,10 @@ Les cas détaillés sont également disponibles dans `RECETTE_MFA_ADMIN.md`. Ils
 | MFA-09 | Retirer l'ancien facteur alors qu'un secours est vérifié | Retrait autorisé ; un facteur vérifié demeure |
 | MFA-10 | Tenter de fermer le challenge par croix, Échap et clic hors de la boîte | Fermeture impossible ; accès à l'espace administrateur bloqué jusqu'à AAL2 ; `/security/mfa` reste accessible pour gérer les facteurs |
 
+### 6.2 P4.2.2 — profils et administration des comptes
+
+Les cas détaillés A-01 à D-06 sont dans `RECETTE_P4.2.2_GESTION_PROFILS.md`. Ils sont obligatoires avant de déclarer P4.2 acceptable : rôles cumulables, invitation sans mot de passe tiers, suspension/révocation de session, profil personnel et retrait de l'interface historique.
+
 ## 7. P4.3 — Modération communautaire
 
 | Cas | Action | Résultat attendu |

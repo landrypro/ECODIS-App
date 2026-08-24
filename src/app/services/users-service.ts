@@ -19,6 +19,13 @@ interface AccountStatusActionResult {
   message: string;
 }
 
+interface OwnProfileUpdateResult {
+  user: {
+    id: string;
+    name: string;
+  };
+}
+
 export async function fetchUserRole(accessToken: string): Promise<string> {
   try {
     const data = await fetchJson<{ role?: string }>("/users/me/role", {
@@ -47,6 +54,14 @@ export async function fetchUserAuthorization(accessToken: string): Promise<UserA
 
 export async function verifyCurrentAccountAccess(accessToken: string): Promise<void> {
   await fetchJson("/users/me/role", { headers: getHeaders(accessToken) });
+}
+
+export async function updateOwnProfile(name: string, accessToken: string): Promise<OwnProfileUpdateResult> {
+  return fetchJson<OwnProfileUpdateResult>("/users/me/profile", {
+    method: "PUT",
+    headers: jsonHeaders(accessToken),
+    body: JSON.stringify({ name }),
+  });
 }
 
 export async function fetchAllUsers(accessToken: string): Promise<AppUser[]> {
