@@ -70,6 +70,27 @@ export function canAssignRequestedRoles(actorRoles: AppRole[], currentTargetRole
     && !requestedRoles.some((role) => protectedRoles.includes(role));
 }
 
+export function canManageRoleAssignment(
+  actorId: string,
+  targetUserId: string,
+  actorRoles: AppRole[],
+  currentTargetRoles: AppRole[],
+  requestedRoles: AppRole[],
+): boolean {
+  return actorId !== targetUserId && canAssignRequestedRoles(actorRoles, currentTargetRoles, requestedRoles);
+}
+
+export function canManageAccountStatus(
+  actorId: string,
+  targetUserId: string,
+  actorRoles: AppRole[],
+  targetRoles: AppRole[],
+): boolean {
+  if (actorId === targetUserId || targetRoles.includes("super_admin")) return false;
+  if (actorRoles.includes("super_admin")) return true;
+  return hasPermission(actorRoles, "users_manage_basic_roles") && !targetRoles.includes("admin");
+}
+
 export function canEditOwnedContent(roles: AppRole[], contentOwnerId: string | null | undefined, actorId: string): boolean {
   return hasPermission(roles, "content_manage_all")
     || (hasPermission(roles, "content_edit_own") && contentOwnerId === actorId);

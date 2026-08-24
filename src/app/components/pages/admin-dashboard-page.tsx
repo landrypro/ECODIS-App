@@ -223,7 +223,11 @@ export function AdminDashboardPage() {
               return (
                 <button
                   key={item.key}
-                  onClick={() => { setActiveSection(item.key); setMobileSidebar(false); }}
+                  onClick={() => {
+                    if (item.key === "users") navigate("/admin/users");
+                    else setActiveSection(item.key);
+                    setMobileSidebar(false);
+                  }}
                   title={item.label}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl mb-0.5 text-[12px] font-medium transition-all ${
                     active
@@ -439,7 +443,7 @@ function OverviewSection({ stats, users, messages, series, auditLogs, health, na
             <h3 className="text-[14px] font-semibold text-foreground flex items-center gap-2">
               <Users className="w-4 h-4 text-primary" /> Derniers inscrits
             </h3>
-            <button onClick={() => setActiveSection("users")} className="text-[10px] text-[#152a6b] hover:underline font-medium">Gerer</button>
+            <button onClick={() => navigate("/admin/users")} className="text-[10px] text-[#152a6b] hover:underline font-medium">Gerer</button>
           </div>
           <div className="space-y-1.5">
             {recentUsers.map((u: AppUser) => (
@@ -499,7 +503,7 @@ function OverviewSection({ stats, users, messages, series, auditLogs, health, na
             {[
               { label: "Nouveau message", icon: Plus, color: "bg-[#152a6b]", onClick: () => setActiveSection("content") },
               { label: "Creer programme", icon: BookOpen, color: "bg-purple-600", onClick: () => setActiveSection("content") },
-              { label: "Creer utilisateur", icon: UserPlus, color: "bg-[#9b1b30]", onClick: () => setActiveSection("users") },
+              { label: "Gerer les utilisateurs", icon: UserPlus, color: "bg-[#9b1b30]", onClick: () => navigate("/admin/users") },
               { label: "Exporter", icon: Download, color: "bg-emerald-600", onClick: () => setActiveSection("export") },
             ].map((a) => (
               <button key={a.label} onClick={a.onClick} className="flex items-center gap-2 p-3 rounded-xl border border-border hover:bg-muted/50 transition-colors text-left active:scale-[0.98]">

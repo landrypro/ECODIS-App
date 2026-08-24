@@ -50,6 +50,12 @@ export async function getUser(req: Request) {
   if (!token) return null;
   const { data: { user }, error } = await adminClient.auth.getUser(token);
   if (error || !user) return null;
+  const { data: accountStatus, error: accountStatusError } = await adminClient
+    .from("user_account_status")
+    .select("status")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (accountStatusError || accountStatus?.status === "suspended") return null;
   return user;
 }
 

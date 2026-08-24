@@ -1,4 +1,5 @@
 import { Hono } from "npm:hono";
+import { AUTH_REDIRECT_URL } from "../config.ts";
 import { getAppConfig } from "../lib/app-config.ts";
 import {
   ensureUserRoleRecord,
@@ -10,9 +11,9 @@ import {
 } from "../lib/auth.ts";
 import { handleApiError, ValidationError } from "../lib/errors.ts";
 import { logAudit } from "../lib/audit.ts";
-import { getUser, supabaseAdmin, supabasePublicForRequest } from "../lib/supabase.ts";
-import { validateEmail, validateOptionalString, validatePassword } from "../lib/validation.ts";
-import { canAssignRequestedRoles, getPrimaryRole, normalizeRoles } from "../domain/authorization.ts";
+import { getUser, supabaseAdmin, supabasePublic, supabasePublicForRequest } from "../lib/supabase.ts";
+import { validateAccountStatus, validateEmail, validateOptionalString, validatePassword, validateRequiredString } from "../lib/validation.ts";
+import { canManageAccountStatus, canManageRoleAssignment, getPermissions, getPrimaryRole, normalizeRoles } from "../domain/authorization.ts";
 
 export const authRoutes = new Hono();
 
@@ -71,12 +72,14 @@ authRoutes.get("/users", async (c) => {
     const { data: authData, error } = await admin.auth.admin.listUsers();
     if (error) return c.json({ error: `List users error: ${error.message}` }, 500);
 
-    const [{ data: legacyRows, error: legacyError }, { data: assignmentRows, error: assignmentError }] = await Promise.all([
+    const [{ data: legacyRows, error: legacyError }, { data: assignmentRows, error: assignmentError }, { data: statusRows, error: statusError }] = await Promise.all([
       admin.from("users_roles").select("*"),
       admin.from("user_role_assignments").select("user_id, role"),
+      admin.from("user_account_status").select("user_id, status, suspension_reason, suspended_at, suspension_expires_at"),
     ]);
     if (legacyError) throw legacyError;
     if (assignmentError) throw assignmentError;
+    if (statusError) throw statusError;
     const legacyByUser = new Map((legacyRows ?? []).map((row: any) => [row.user_id, row]));
     const rolesByUser = new Map<string, string[]>();
     for (const assignment of assignmentRows ?? []) {
@@ -84,18 +87,27 @@ authRoutes.get("/users", async (c) => {
       roles.push(assignment.role);
       rolesByUser.set(assignment.user_id, roles);
     }
+    const statusByUser = new Map((statusRows ?? []).map((row: any) => [row.user_id, row]));
 
     const users = (authData.users ?? []).map((item: any) => {
       const roles = normalizeRoles(rolesByUser.get(item.id) ?? (legacyByUser.get(item.id)?.role === "admin" ? ["admin"] : []));
       const legacy = legacyByUser.get(item.id);
+      const accountStatus = statusByUser.get(item.id);
       return {
         id: item.id,
         email: item.email ?? "",
         name: legacy?.name || item.user_metadata?.name || item.email?.split("@")[0] || "Disciple",
         role: getPrimaryRole(roles),
         roles,
+        permissions: getPermissions(roles),
         createdAt: item.created_at,
         lastSignIn: item.last_sign_in_at,
+        emailConfirmedAt: item.email_confirmed_at ?? null,
+        invitedAt: item.invited_at ?? null,
+        accountStatus: accountStatus?.status === "suspended" ? "suspended" : "active",
+        suspensionReason: accountStatus?.suspension_reason ?? null,
+        suspendedAt: accountStatus?.suspended_at ?? null,
+        suspensionExpiresAt: accountStatus?.suspension_expires_at ?? null,
       };
     });
     return c.json({ users });
@@ -112,13 +124,13 @@ authRoutes.put("/users/:id/roles", async (c) => {
     const targetUserId = c.req.param("id");
     const { roles: requestedRolesInput, reason } = await c.req.json();
     const requestedRoles = normalizeRoles(requestedRolesInput);
-    const validatedReason = validateOptionalString(reason, "Motif", 500) || "Affectation de rôle P4.2";
+    const validatedReason = validateRequiredString(reason, "Motif", 10, 500);
     const admin = supabaseAdmin();
     const { data: target } = await admin.auth.admin.getUserById(targetUserId);
     if (!target.user) throw new ValidationError("Utilisateur introuvable", 404);
     const currentRoles = await getUserRoles(targetUserId);
 
-    if (!canAssignRequestedRoles(authorization!.roles, currentRoles, requestedRoles)) {
+    if (!canManageRoleAssignment(user!.id, targetUserId, authorization!.roles, currentRoles, requestedRoles)) {
       throw new ValidationError("Cette affectation de rôle n'est pas autorisée", 403);
     }
     if (requestedRoles.includes("admin") && !isMfaLevelTwo(c.req.raw)) {
@@ -151,7 +163,7 @@ authRoutes.put("/users/:id/role", async (c) => {
     if (!target.user) throw new ValidationError("Utilisateur introuvable", 404);
     const currentRoles = await getUserRoles(targetUserId);
     const requestedRoles = normalizeRoles(role === "admin" ? ["admin"] : []);
-    if (!canAssignRequestedRoles(authorization!.roles, currentRoles, requestedRoles)) {
+    if (!canManageRoleAssignment(user!.id, targetUserId, authorization!.roles, currentRoles, requestedRoles)) {
       throw new ValidationError("Cette affectation de rôle n'est pas autorisée", 403);
     }
     if (role === "admin" && !isMfaLevelTwo(c.req.raw)) {
@@ -162,6 +174,148 @@ authRoutes.put("/users/:id/role", async (c) => {
     return c.json({ success: true, role: updated.primaryRole, roles: updated.roles });
   } catch (error) {
     return handleApiError(c, error, "Update role error");
+  }
+});
+
+authRoutes.put("/users/:id/status", async (c) => {
+  try {
+    const { user, authorization, error: authError } = await requirePermission(c.req.raw, "users_manage_basic_roles");
+    if (authError) return c.json({ error: authError }, user ? 403 : 401);
+    const targetUserId = c.req.param("id");
+    const { status: requestedStatus, reason } = await c.req.json();
+    const status = validateAccountStatus(requestedStatus);
+    const validatedReason = validateRequiredString(reason, "Motif", 10, 500);
+    const admin = supabaseAdmin();
+    const { data: target } = await admin.auth.admin.getUserById(targetUserId);
+    if (!target.user) throw new ValidationError("Utilisateur introuvable", 404);
+    const targetRoles = await getUserRoles(targetUserId);
+    if (!canManageAccountStatus(user!.id, targetUserId, authorization!.roles, targetRoles)) {
+      throw new ValidationError("Cette modification de statut n'est pas autorisée", 403);
+    }
+
+    if (status === "suspended") {
+      const { error: banError } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: "876000h" });
+      if (banError) throw banError;
+      const { error: statusError } = await admin.from("user_account_status").upsert({
+        user_id: targetUserId,
+        status: "suspended",
+        suspension_reason: validatedReason,
+        suspended_at: new Date().toISOString(),
+        suspended_by: user!.id,
+        suspension_expires_at: null,
+        reactivated_at: null,
+        reactivated_by: null,
+        reactivation_reason: null,
+      }, { onConflict: "user_id" });
+      if (statusError) throw statusError;
+      const { error: revokeError } = await admin.rpc("revoke_user_sessions", { p_user_id: targetUserId });
+      if (revokeError) throw revokeError;
+      await logAudit(user!.id, user!.email || "", "user_suspended", "Utilisateur suspendu", { targetUserId, reason: validatedReason });
+      return c.json({ status: "suspended", message: "Le compte est suspendu et ses sessions ont été révoquées." });
+    }
+
+    const { error: unbanError } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: "none" });
+    if (unbanError) throw unbanError;
+    const { error: statusError } = await admin.from("user_account_status").upsert({
+      user_id: targetUserId,
+      status: "active",
+      suspension_reason: null,
+      suspended_at: null,
+      suspended_by: null,
+      suspension_expires_at: null,
+      reactivated_at: new Date().toISOString(),
+      reactivated_by: user!.id,
+      reactivation_reason: validatedReason,
+    }, { onConflict: "user_id" });
+    if (statusError) throw statusError;
+    await logAudit(user!.id, user!.email || "", "user_reactivated", "Utilisateur réactivé", { targetUserId, reason: validatedReason });
+    return c.json({ status: "active", message: "Le compte est réactivé. Le titulaire devra se reconnecter." });
+  } catch (error) {
+    return handleApiError(c, error, "Update account status error");
+  }
+});
+
+authRoutes.post("/users/invitations", async (c) => {
+  try {
+    const { user, error: authError } = await requirePermission(c.req.raw, "users_manage_basic_roles");
+    if (authError) return c.json({ error: authError }, user ? 403 : 401);
+    const { email, name } = await c.req.json();
+    const validatedEmail = validateEmail(email);
+    const validatedName = validateRequiredString(name, "Nom", 2, 120);
+    const admin = supabaseAdmin();
+    const { data: existing } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const existingUser = existing.users?.find((item) => item.email?.toLowerCase() === validatedEmail);
+    if (existingUser) {
+      throw new ValidationError(existingUser.email_confirmed_at
+        ? "Un compte confirmé existe déjà pour cette adresse. Utilisez le lien de réinitialisation."
+        : "Une invitation est déjà en attente pour cette adresse. Utilisez « Renvoyer l'invitation »." , 409);
+    }
+    const { data, error } = await admin.auth.admin.inviteUserByEmail(validatedEmail, {
+      data: { name: validatedName },
+      redirectTo: AUTH_REDIRECT_URL,
+    });
+    if (error) throw error;
+    if (data.user) await ensureUserRoleRecord(data.user, validatedName);
+    await logAudit(user!.id, user!.email || "", "user_invitation_sent", "Invitation utilisateur envoyée", {
+      targetUserId: data.user?.id ?? null,
+      targetEmailDomain: validatedEmail.split("@")[1],
+    });
+    return c.json({ accepted: true, message: "L'invitation a été envoyée à l'adresse indiquée." }, 202);
+  } catch (error) {
+    return handleApiError(c, error, "Send invitation error");
+  }
+});
+
+authRoutes.post("/users/:id/invitation", async (c) => {
+  try {
+    const { user, error: authError } = await requirePermission(c.req.raw, "users_manage_basic_roles");
+    if (authError) return c.json({ error: authError }, user ? 403 : 401);
+    const targetUserId = c.req.param("id");
+    const admin = supabaseAdmin();
+    const { data: target } = await admin.auth.admin.getUserById(targetUserId);
+    if (!target.user) throw new ValidationError("Utilisateur introuvable", 404);
+    const targetRoles = await getUserRoles(targetUserId);
+    if (targetRoles.includes("super_admin")) {
+      throw new ValidationError("L'invitation d'un super-administrateur suit la procédure de gouvernance.", 403);
+    }
+    if (target.user.email_confirmed_at) throw new ValidationError("Ce compte est déjà confirmé. Utilisez le lien de réinitialisation.", 409);
+    if (!target.user.email) throw new ValidationError("Adresse e-mail utilisateur indisponible", 409);
+    const { error } = await admin.auth.admin.inviteUserByEmail(target.user.email, {
+      data: { name: target.user.user_metadata?.name || target.user.email.split("@")[0] },
+      redirectTo: AUTH_REDIRECT_URL,
+    });
+    if (error) throw error;
+    await logAudit(user!.id, user!.email || "", "user_invitation_resent", "Invitation utilisateur renvoyée", {
+      targetUserId,
+      targetEmailDomain: target.user.email.split("@")[1],
+    });
+    return c.json({ accepted: true, message: "L'invitation a été renvoyée à l'adresse du titulaire." }, 202);
+  } catch (error) {
+    return handleApiError(c, error, "Resend invitation error");
+  }
+});
+
+authRoutes.post("/users/:id/password-reset", async (c) => {
+  try {
+    const { user, error: authError } = await requirePermission(c.req.raw, "users_manage_basic_roles");
+    if (authError) return c.json({ error: authError }, user ? 403 : 401);
+    const targetUserId = c.req.param("id");
+    const admin = supabaseAdmin();
+    const { data: target } = await admin.auth.admin.getUserById(targetUserId);
+    if (!target.user?.email) throw new ValidationError("Utilisateur introuvable", 404);
+    const targetRoles = await getUserRoles(targetUserId);
+    if (targetRoles.includes("super_admin")) {
+      throw new ValidationError("La récupération d'un super-administrateur suit la procédure de gouvernance.", 403);
+    }
+    const { error } = await supabasePublic().auth.resetPasswordForEmail(target.user.email, { redirectTo: AUTH_REDIRECT_URL });
+    if (error) throw error;
+    await logAudit(user!.id, user!.email || "", "password_reset_requested", "Lien de réinitialisation demandé", {
+      targetUserId,
+      targetEmailDomain: target.user.email.split("@")[1],
+    });
+    return c.json({ accepted: true, message: "Si le compte est éligible, un lien sécurisé a été envoyé à son titulaire." }, 202);
+  } catch (error) {
+    return handleApiError(c, error, "Admin password reset error");
   }
 });
 

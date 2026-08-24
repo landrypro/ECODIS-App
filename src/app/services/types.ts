@@ -29,8 +29,15 @@ export interface AppUser {
   name: string;
   role: AppRole;
   roles: AppRole[];
+  permissions?: string[];
   createdAt: string;
   lastSignIn: string | null;
+  emailConfirmedAt?: string | null;
+  invitedAt?: string | null;
+  accountStatus?: "active" | "suspended";
+  suspensionReason?: string | null;
+  suspendedAt?: string | null;
+  suspensionExpiresAt?: string | null;
 }
 
 export interface Comment {

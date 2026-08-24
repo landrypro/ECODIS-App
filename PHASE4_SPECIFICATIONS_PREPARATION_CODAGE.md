@@ -17,6 +17,7 @@ La phase est découpée en lots livrables. Aucun lot ne nécessite de réécrire
 | P4.1 | Cycle éditorial des contenus et des séries | aucune |
 | P4.2 | Rôles métier et permissions | P4.1 recommandée |
 | P4.2.1 | Parcours MFA TOTP des administrateurs | P4.2 et Supabase Auth MFA |
+| P4.2.2 | Gestion des profils, comptes et habilitations | P4.2, P4.2.1 ; voir `PHASE4_P4.2.2_GESTION_PROFILS_SPECIFICATIONS.md` |
 | P4.3 | Modération traçable des commentaires | P4.2 |
 | P4.4 | Progression détaillée et reprise de lecture | P4.1 |
 | P4.5 | Hors ligne robuste et synchronisation | P4.4 |

@@ -7,6 +7,9 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.integration.test.ts"],
+    // Un seul worker thread évite les délais de démarrage des processus forks sous Windows/OneDrive.
+    pool: "threads",
+    singleThread: true,
     clearMocks: true,
     restoreMocks: true,
   },

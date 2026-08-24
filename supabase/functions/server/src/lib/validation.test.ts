@@ -48,4 +48,6 @@ Deno.test("validation - encadre le signalement et la modération", () => {
   assert(validation.validateModerationAction("hide") === "hide", "L'action hide doit être acceptée");
   assertThrows(() => validation.validateCommentReportReason("invalid"), "Motif de signalement invalide");
   assertThrows(() => validation.validateModerationAction("publish"), "Action de modération invalide");
+  assert(validation.validateAccountStatus("suspended") === "suspended", "Le statut suspended doit être accepté");
+  assertThrows(() => validation.validateAccountStatus("disabled"), "Statut de compte invalide");
 });

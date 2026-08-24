@@ -68,3 +68,7 @@ Avant d'activer ou de conserver `APP_REQUIRE_ADMIN_MFA=true` en staging ou produ
 6. L'API refuse toute affectation `super_admin` et toute suppression d'un super-administrateur.
 7. Chaque changement autorisé est présent dans le journal d'audit.
 8. Le parcours MFA couvre l'enrôlement, le challenge de connexion, le second facteur et l'impossibilité de retirer le dernier facteur vérifié.
+
+## Extension P4.2.2-A : gestion unifiée des rôles
+
+Le point d'entrée `/admin/users` utilise maintenant la gestion moderne des rôles cumulables. Il affiche les permissions effectives, exige un motif de 10 à 500 caractères et n'appelle plus l'endpoint historique de rôle unique. L'API refuse également l'auto-modification de rôles. Le lot P4.2.2-B ajoute l'invitation, son renvoi et l'envoi d'un lien de réinitialisation sans mot de passe administrateur. Le lot P4.2.2-C ajoute la suspension, la réactivation et la révocation des refresh sessions ; seule l'administration complète du profil relève désormais de P4.2.2-D. Les exigences détaillées et les critères de recette sont consignées dans `PHASE4_P4.2.2_GESTION_PROFILS_SPECIFICATIONS.md`.

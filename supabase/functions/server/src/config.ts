@@ -16,6 +16,25 @@ export const ALLOWED_ORIGINS = getRequiredEnv("APP_ALLOWED_ORIGINS")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+function getAuthRedirectUrl(): string {
+  const configured = Deno.env.get("APP_AUTH_REDIRECT_URL")?.trim();
+  const fallbackOrigin = ALLOWED_ORIGINS[0];
+  const candidate = configured || (fallbackOrigin ? new URL("/reset-password", fallbackOrigin).toString() : "");
+  try {
+    const url = new URL(candidate);
+    if (!ALLOWED_ORIGINS.includes(url.origin)) {
+      throw new Error("APP_AUTH_REDIRECT_URL doit utiliser une origine autorisée");
+    }
+    return url.toString();
+  } catch (error) {
+    throw new Error(error instanceof Error ? `Invalid APP_AUTH_REDIRECT_URL: ${error.message}` : "Invalid APP_AUTH_REDIRECT_URL");
+  }
+}
+
+// URL de retour des liens d'invitation et de récupération Supabase Auth.
+// Elle doit aussi être déclarée dans les Redirect URLs du projet Supabase.
+export const AUTH_REDIRECT_URL = getAuthRedirectUrl();
 export const BOOTSTRAP_ADMIN_EMAILS = new Set(
   (Deno.env.get("APP_BOOTSTRAP_ADMIN_EMAILS") ?? "")
     .split(",")

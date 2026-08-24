@@ -13,7 +13,7 @@ Deno.test("authorization - cumule les permissions des rôles", async () => {
 });
 
 Deno.test("authorization - réserve les rôles sensibles au super-administrateur", async () => {
-  const { canAssignRequestedRoles } = await import("./authorization.ts");
+  const { canAssignRequestedRoles, canManageAccountStatus, canManageRoleAssignment } = await import("./authorization.ts");
   if (!canAssignRequestedRoles(["admin"], ["user"], ["user", "content_editor"])) {
     throw new Error("Un administrateur doit pouvoir attribuer le rôle éditeur");
   }
@@ -22,5 +22,17 @@ Deno.test("authorization - réserve les rôles sensibles au super-administrateur
   }
   if (canAssignRequestedRoles(["super_admin"], ["user"], ["user", "super_admin"])) {
     throw new Error("Le rôle super_admin reste hors du flux applicatif");
+  }
+  if (canManageRoleAssignment("user-1", "user-1", ["super_admin"], ["user"], ["user", "admin"])) {
+    throw new Error("Un acteur ne doit pas modifier ses propres rôles");
+  }
+  if (!canManageAccountStatus("admin-1", "user-1", ["admin"], ["user"])) {
+    throw new Error("Un administrateur doit pouvoir suspendre un membre");
+  }
+  if (canManageAccountStatus("admin-1", "admin-2", ["admin"], ["admin"])) {
+    throw new Error("Un administrateur ne doit pas suspendre un autre administrateur");
+  }
+  if (canManageAccountStatus("super-1", "super-2", ["super_admin"], ["super_admin"])) {
+    throw new Error("Un super-administrateur reste protégé par la gouvernance");
   }
 });

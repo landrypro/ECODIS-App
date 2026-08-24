@@ -77,6 +77,13 @@ export function validateBoolean(value: unknown, fieldName: string): boolean {
   return value;
 }
 
+export function validateAccountStatus(value: unknown): "active" | "suspended" {
+  if (value !== "active" && value !== "suspended") {
+    throw new ValidationError("Statut de compte invalide");
+  }
+  return value;
+}
+
 export function validateCommentText(text: unknown): string {
   return validateRequiredString(text, "Le commentaire", 1, 1000);
 }
