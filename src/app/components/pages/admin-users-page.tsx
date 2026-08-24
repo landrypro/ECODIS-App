@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../auth-context";
+import { ApiError } from "../../services/http";
 import {
   fetchAllUsers,
   inviteUser,
@@ -77,6 +78,7 @@ export function AdminUsersPage() {
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [sendingInvitation, setSendingInvitation] = useState(false);
+  const [invitationCooldowns, setInvitationCooldowns] = useState<Record<string, number>>({});
 
   const assignableRoles = useMemo(() => getAssignableRoles(actorRoles), [actorRoles]);
 
@@ -132,6 +134,16 @@ export function AdminUsersPage() {
       const result = await resendUserInvitation(target.id, accessToken);
       toast.success(result.message);
     } catch (error: any) {
+      if (error instanceof ApiError && error.status === 429 && error.retryAfterSeconds) {
+        const expiresAt = Date.now() + error.retryAfterSeconds * 1000;
+        setInvitationCooldowns((current) => ({ ...current, [target.id]: expiresAt }));
+        window.setTimeout(() => {
+          setInvitationCooldowns((current) => {
+            const { [target.id]: _expired, ...remaining } = current;
+            return remaining;
+          });
+        }, error.retryAfterSeconds * 1000);
+      }
       toast.error(error?.message || "L'invitation n'a pas pu être renvoyée.");
     } finally {
       setAccountActionUserId(null);
@@ -237,6 +249,7 @@ export function AdminUsersPage() {
                 assignableRoles={assignableRoles}
                 saving={savingUserId === appUser.id}
                 accountActionLoading={accountActionUserId === appUser.id}
+                resendRetrySeconds={Math.max(0, Math.ceil(((invitationCooldowns[appUser.id] ?? 0) - Date.now()) / 1000))}
                 actorRoles={actorRoles}
                 onToggle={() => setExpandedUserId(expandedUserId === appUser.id ? null : appUser.id)}
                 onSave={(requestedRoles, reason) => handleSaveRoles(appUser, requestedRoles, reason)}
@@ -252,7 +265,7 @@ export function AdminUsersPage() {
   );
 }
 
-function UserCard({ appUser, expanded, isCurrentUser, assignableRoles, actorRoles, saving, accountActionLoading, onToggle, onSave, onResendInvitation, onPasswordReset, onUpdateAccountStatus }: {
+function UserCard({ appUser, expanded, isCurrentUser, assignableRoles, actorRoles, saving, accountActionLoading, resendRetrySeconds, onToggle, onSave, onResendInvitation, onPasswordReset, onUpdateAccountStatus }: {
   appUser: AppUser;
   expanded: boolean;
   isCurrentUser: boolean;
@@ -260,6 +273,7 @@ function UserCard({ appUser, expanded, isCurrentUser, assignableRoles, actorRole
   actorRoles: AppRole[];
   saving: boolean;
   accountActionLoading: boolean;
+  resendRetrySeconds: number;
   onToggle: () => void;
   onSave: (roles: AppRole[], reason: string) => Promise<void>;
   onResendInvitation: () => void;
@@ -303,7 +317,7 @@ function UserCard({ appUser, expanded, isCurrentUser, assignableRoles, actorRole
         <div><p className="mb-2 text-xs font-medium text-card-foreground">Statut du compte</p><span className={`rounded-full border px-2 py-1 text-[10px] font-medium ${appUser.accountStatus === "suspended" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{appUser.accountStatus === "suspended" ? "Suspendu" : "Actif"}</span>{appUser.accountStatus === "suspended" && appUser.suspensionReason && <p className="mt-2 text-xs text-muted-foreground">Motif : {appUser.suspensionReason}</p>}</div>
         <div><p className="mb-2 text-xs font-medium text-card-foreground">Autorisations effectives</p><div className="flex flex-wrap gap-2">{(appUser.permissions ?? []).length ? appUser.permissions!.map((permission) => <span key={permission} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-700">{PERMISSION_LABELS[permission] ?? permission}</span>) : <span className="text-[11px] text-muted-foreground">Aucune autorisation élevée.</span>}</div></div>
         {!isProtected && <div className="grid gap-2 sm:grid-cols-2">
-          {!appUser.emailConfirmedAt && <button onClick={onResendInvitation} disabled={accountActionLoading} className="flex items-center justify-center gap-2 rounded-xl border border-[#152a6b]/20 bg-[#152a6b]/5 py-2.5 text-xs font-medium text-[#152a6b] disabled:opacity-40">{accountActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailPlus className="h-4 w-4" />}Renvoyer l’invitation</button>}
+          {!appUser.emailConfirmedAt && <button onClick={onResendInvitation} disabled={accountActionLoading || resendRetrySeconds > 0} className="flex items-center justify-center gap-2 rounded-xl border border-[#152a6b]/20 bg-[#152a6b]/5 py-2.5 text-xs font-medium text-[#152a6b] disabled:opacity-40">{accountActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailPlus className="h-4 w-4" />}{resendRetrySeconds > 0 ? `Réessayer dans ${resendRetrySeconds} s` : "Renvoyer l’invitation"}</button>}
           <button onClick={onPasswordReset} disabled={accountActionLoading} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-xs font-medium text-slate-700 disabled:opacity-40">{accountActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}Envoyer un lien de mot de passe</button>
         </div>}
         {canManageStatus && <div className={`space-y-3 rounded-xl border p-3 ${appUser.accountStatus === "suspended" ? "border-emerald-200 bg-emerald-50/50" : "border-red-200 bg-red-50/50"}`}>

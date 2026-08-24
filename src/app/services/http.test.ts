@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BASE, fetchJson, getHeaders, jsonHeaders, SESSION_REJECTED_EVENT } from "./http";
+import { ApiError, BASE, fetchJson, getHeaders, jsonHeaders, SESSION_REJECTED_EVENT } from "./http";
 
 describe("service HTTP", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -21,6 +21,18 @@ describe("service HTTP", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Acces refuse" }), { status: 403 })));
 
     await expect(fetchJson("/admin")).rejects.toThrow("Acces refuse");
+  });
+
+  it("propage le délai Retry-After d'une limitation e-mail", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Limité", retryAfterSeconds: 60 }), {
+      status: 429,
+      headers: { "Retry-After": "60" },
+    })));
+
+    await expect(fetchJson("/users/user-id/invitation")).rejects.toMatchObject<ApiError>({
+      status: 429,
+      retryAfterSeconds: 60,
+    });
   });
 
   it("signale globalement une session refusée", async () => {

@@ -67,10 +67,12 @@ Résultat attendu : HTTP 200. Aucune écriture de recette ne vise production.
 | Cas | Action | Résultat attendu |
 |---|---|---|
 | B-01 | Inviter un compte avec nom et e-mail depuis `/admin/users`. | Aucun champ mot de passe ; réponse neutre ; e-mail reçu ; audit `user_invitation_sent`. |
-| B-02 | Renvoyer l'invitation avant confirmation. | Nouvelle invitation sans doublon ; audit `user_invitation_resent`. |
+| B-02 | Renvoyer l'invitation avant confirmation. | Sans expéditeur Resend configuré : HTTP 503 explicite et audit `user_invitation_delivery_failed`. Avec Resend actif : nouvelle invitation sans doublon et audit `user_invitation_resent`. |
 | B-03 | Invité définit son mot de passe via le lien. | Compte confirmé et connexion possible ; secret jamais affiché ou journalisé. |
 | B-04 | Admin demande la réinitialisation du titulaire. | Réponse neutre ; lien reçu seulement par le titulaire ; audit `password_reset_requested`. |
 | B-05 | Membre connecté demande son propre lien depuis `/profil`. | Même réponse neutre ; parcours vers `/reset-password` ; sessions invalidées après succès. |
+
+> Le correctif détaillé de B-02 est documenté dans `P4.2.2_B02_RENVOI_INVITATION_SPECIFICATIONS.md`. Tant que Resend n'est pas configuré avec un expéditeur vérifié, le résultat attendu de B-02 est HTTP 503 contrôlé : ne pas multiplier les tentatives.
 
 ## 6. P4.2.2-C — suspension, réactivation et sessions
 

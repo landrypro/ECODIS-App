@@ -71,6 +71,10 @@ export const RATE_LIMIT_ADMIN_MAX = Math.min(
   300,
   Math.max(5, Number(Deno.env.get("APP_RATE_LIMIT_ADMIN_MAX") ?? "60") || 60),
 );
+export const INVITATION_RESEND_COOLDOWN_SECONDS = Math.min(
+  3600,
+  Math.max(30, Number(Deno.env.get("APP_INVITATION_RESEND_COOLDOWN_SECONDS") ?? "60") || 60),
+);
 
 export const DEFAULT_APP_CONFIG_ROW = {
   id: "global",

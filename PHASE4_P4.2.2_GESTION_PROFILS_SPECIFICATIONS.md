@@ -275,3 +275,4 @@ Cette conception est prête pour le codage lorsque les décisions suivantes sont
 - Supabase Auth invitation : invitation depuis un environnement serveur de confiance ;
 - Supabase Auth password reset : lien envoyé au titulaire et URL de retour autorisée ;
 - `PHASE4_P4.2_IMPLEMENTATION.md` : modèle RBAC et exigences MFA ECODIS.
+- `P4.2.2_B02_RENVOI_INVITATION_SPECIFICATIONS.md` : correctif du renvoi d'invitation, quotas e-mail et fournisseur transactionnel.
