@@ -14,6 +14,20 @@ export interface InvitationDeliveryGateway {
 
 type Environment = Pick<typeof Deno.env, "get">;
 
+function secureActionLink(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") throw new Error("unsupported protocol");
+    return url.toString();
+  } catch {
+    throw new DeliveryError(
+      "Le service d'e-mail est temporairement indisponible. Réessayez plus tard.",
+      503,
+      "unavailable",
+    );
+  }
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>'"]/g, (character) => ({
     "&": "&amp;",
@@ -52,6 +66,7 @@ class ResendInvitationDeliveryGateway implements InvitationDeliveryGateway {
   ) {}
 
   async sendInvite(input: InvitationDeliveryInput): Promise<{ accepted: true }> {
+    const actionLink = secureActionLink(input.actionLink);
     let response: Response;
     try {
       response = await this.send("https://api.resend.com/emails", {
@@ -65,7 +80,7 @@ class ResendInvitationDeliveryGateway implements InvitationDeliveryGateway {
           from: this.from,
           to: [input.recipientEmail],
           subject: "Votre invitation ECODIS",
-          html: invitationEmailHtml(input.recipientName, input.actionLink),
+          html: invitationEmailHtml(input.recipientName, actionLink),
         }),
         signal: AbortSignal.timeout(10_000),
       });
@@ -95,10 +110,15 @@ class ResendInvitationDeliveryGateway implements InvitationDeliveryGateway {
   }
 }
 
-export function getInvitationDeliveryGateway(env: Environment = Deno.env): InvitationDeliveryGateway {
+export function getInvitationDeliveryGateway(
+  env: Environment = Deno.env,
+  send: typeof fetch = fetch,
+): InvitationDeliveryGateway {
   const provider = env.get("APP_EMAIL_PROVIDER")?.trim().toLowerCase();
   const apiKey = env.get("RESEND_API_KEY")?.trim();
   const from = env.get("APP_EMAIL_FROM")?.trim();
-  if (provider !== "resend" || !apiKey || !from) return new DisabledInvitationDeliveryGateway();
-  return new ResendInvitationDeliveryGateway(apiKey, from);
+  if (provider !== "resend" || !apiKey || !from || /[\r\n]/.test(from)) {
+    return new DisabledInvitationDeliveryGateway();
+  }
+  return new ResendInvitationDeliveryGateway(apiKey, from, send);
 }

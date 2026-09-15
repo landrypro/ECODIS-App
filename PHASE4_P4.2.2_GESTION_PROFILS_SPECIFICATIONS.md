@@ -214,6 +214,11 @@ Le lot **P4.2.2-A** est le minimum nécessaire à la recette P4.1/P4.3. Les lots
 - les événements `user_invitation_sent`, `user_invitation_resent` et `password_reset_requested` sont journalisés sans lien, jeton ni adresse e-mail complète ;
 - `APP_AUTH_REDIRECT_URL` doit être une origine CORS autorisée et une Redirect URL déclarée dans Supabase Auth ;
 - aucune modification directe de mot de passe n'est possible depuis l'administration.
+- les réponses de succès restent neutres et les erreurs de livraison sont classées en 429, 503 ou 500 sans message brut du fournisseur ;
+- le lien de renvoi n'est accepté par le gateway transactionnel que s'il utilise HTTPS ; il n'est jamais retourné au navigateur ;
+- `@supabase/supabase-js` est figé sur la version du lockfile ;
+- l'implémentation locale est terminée, mais la migration de livraison et le redéploiement staging restent à effectuer séparément ;
+- l'envoi Resend réel demeure désactivé jusqu'à la validation d'un domaine expéditeur.
 
 ### État de réalisation P4.2.2-C
 

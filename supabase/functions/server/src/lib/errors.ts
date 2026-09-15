@@ -68,10 +68,9 @@ export function handleDeliveryApiError(c: any, error: unknown, label: string) {
   const mapped = mapAuthDeliveryError(error);
   const requestId = c.get?.("requestId");
   const logFields = { requestId, label, status: mapped.status, category: mapped.category };
-  writeLog(mapped.status === 500 ? "error" : "warn", "email_delivery_error", {
-    ...logFields,
-    ...(mapped.status === 500 ? { message: sanitizeErrorMessage(error) } : {}),
-  });
+  // Les erreurs Auth et fournisseur peuvent contenir une adresse ou une URL
+  // d'action. Seule leur catégorie publique est journalisée à cette frontière.
+  writeLog(mapped.status === 500 ? "error" : "warn", "email_delivery_error", logFields);
   if (mapped.status === 429 && mapped.retryAfterSeconds) {
     c.header("Retry-After", String(mapped.retryAfterSeconds));
   }

@@ -343,7 +343,7 @@ authRoutes.post("/users/invitations", async (c) => {
       targetUserId: data.user?.id ?? null,
       targetEmailDomain: validatedEmail.split("@")[1],
     });
-    return c.json({ accepted: true, message: "L'invitation a été envoyée à l'adresse indiquée." }, 202);
+    return c.json({ accepted: true, message: "La demande d'invitation a été prise en compte." }, 202);
   } catch (error) {
     return error instanceof ValidationError
       ? handleApiError(c, error, "Send invitation error")

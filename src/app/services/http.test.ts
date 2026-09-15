@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, BASE, fetchJson, getHeaders, jsonHeaders, SESSION_REJECTED_EVENT } from "./http";
+import { BASE, fetchJson, getHeaders, jsonHeaders, SESSION_REJECTED_EVENT } from "./http";
 
 describe("service HTTP", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -29,7 +29,8 @@ describe("service HTTP", () => {
       headers: { "Retry-After": "60" },
     })));
 
-    await expect(fetchJson("/users/user-id/invitation")).rejects.toMatchObject<ApiError>({
+    await expect(fetchJson("/users/user-id/invitation")).rejects.toMatchObject({
+      name: "ApiError",
       status: 429,
       retryAfterSeconds: 60,
     });
