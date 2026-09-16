@@ -1,14 +1,14 @@
-import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
+import { lazy, Suspense, type ComponentType } from "react";
 import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/layout";
 import { PageLoader } from "./components/page-loader";
 
-function lazyPage<T>(factory: () => Promise<{ default: ComponentType<T> }>) {
-  const LazyComponent: LazyExoticComponent<ComponentType<T>> = lazy(factory);
-  return function WrappedPage(props: T) {
+function lazyPage(factory: () => Promise<{ default: ComponentType }>) {
+  const LazyComponent = lazy(factory);
+  return function WrappedPage() {
     return (
       <Suspense fallback={<PageLoader />}>
-        <LazyComponent {...props} />
+        <LazyComponent />
       </Suspense>
     );
   };
