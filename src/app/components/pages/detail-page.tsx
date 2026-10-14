@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import {
   fetchMessage,
@@ -6,7 +6,8 @@ import {
   Message,
   fetchMessageSeries,
   fetchSeries as fetchSeriesDetail,
-  markSeriesProgress,
+  fetchSeriesProgress,
+  ModuleProgress,
   Series,
 } from "../api";
 import { useAuth } from "../auth-context";
@@ -40,6 +41,8 @@ import {
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { CommentsSection } from "../comments-section";
 import { toast } from "sonner";
+import { submitOrQueueProgress } from "../../services/offline-service";
+import { offlineRepository } from "../../offline/offline-repository";
 
 function formatTime(seconds: number): string {
   if (isNaN(seconds)) return "0:00";
@@ -53,13 +56,15 @@ export function DetailPage() {
   const [searchParams] = useSearchParams();
   const seriesIdParam = searchParams.get("series");
   const navigate = useNavigate();
-  const { accessToken, favorites, setFavorites } = useAuth();
+  const { user, accessToken, favorites, setFavorites } = useAuth();
   const {
     isDownloaded,
     getOfflineUrl,
     downloadMessage,
     removeDownload,
     activeDownloads,
+    getOfflineMessage,
+    cacheMessage,
   } = useDownloads();
 
   const [message, setMessage] = useState<Message | null>(null);
@@ -76,21 +81,28 @@ export function DetailPage() {
     messages: Message[];
     currentIndex: number;
   } | null>(null);
-  const [seriesLoading, setSeriesLoading] = useState(false);
+  const [, setSeriesLoading] = useState(false);
   const [isModuleCompleted, setIsModuleCompleted] = useState(false);
+  const [resumePosition, setResumePosition] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const lastSavedPositionRef = useRef(0);
+  const progressSaveInFlightRef = useRef(false);
+  const queuedProgressRef = useRef<{ position: number; duration: number; state: "in_progress" | "completed"; keepalive: boolean } | null>(null);
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
     setSeriesContext(null);
-    fetchMessage(id).then((msg) => {
-      setMessage(msg);
+    void (async () => {
+      const onlineMessage = await fetchMessage(id, accessToken);
+      const resolved = onlineMessage ?? await getOfflineMessage(id);
+      if (onlineMessage) await cacheMessage(onlineMessage);
+      setMessage(resolved);
       setLoading(false);
-    });
-  }, [id]);
+    })();
+  }, [id, accessToken, cacheMessage, getOfflineMessage]);
 
   // Load series context
   useEffect(() => {
@@ -110,8 +122,10 @@ export function DetailPage() {
         }
 
         if (targetSeriesId) {
-          const data = await fetchSeriesDetail(targetSeriesId);
+          const onlineData = await fetchSeriesDetail(targetSeriesId, accessToken);
+          const data = onlineData ?? (user ? await offlineRepository.getSeriesContext(user.id, targetSeriesId) : null);
           if (data) {
+            if (onlineData && user) await offlineRepository.putSeriesContext(user.id, data.series, data.messages);
             const idx = data.messages.findIndex((m) => m.id === id);
             if (idx >= 0) {
               setSeriesContext({
@@ -119,6 +133,30 @@ export function DetailPage() {
                 messages: data.messages,
                 currentIndex: idx,
               });
+              if (accessToken) {
+                const progress = await fetchSeriesProgress(data.series.id, accessToken);
+                const currentProgress = progress.modules?.[id!];
+                setIsModuleCompleted(currentProgress?.state === "completed");
+                setResumePosition(currentProgress?.positionSeconds ?? 0);
+                lastSavedPositionRef.current = currentProgress?.positionSeconds ?? 0;
+                if (user) {
+                  await submitOrQueueProgress({
+                    ownerId: user.id,
+                    seriesId: data.series.id,
+                    messageId: id!,
+                    accessToken,
+                    event: {
+                      eventId: crypto.randomUUID(),
+                      state: currentProgress?.state === "completed" ? "completed" : "in_progress",
+                      progressPercent: currentProgress?.progressPercent ?? 0,
+                      positionSeconds: currentProgress?.positionSeconds ?? 0,
+                      durationSeconds: currentProgress?.durationSeconds ?? 0,
+                      clientUpdatedAt: new Date().toISOString(),
+                      source: "online",
+                    },
+                  });
+                }
+              }
             }
           }
         }
@@ -130,7 +168,7 @@ export function DetailPage() {
     }
 
     loadSeriesContext();
-  }, [id, seriesIdParam]);
+  }, [id, seriesIdParam, accessToken, user]);
 
   useEffect(() => {
     if (message) {
@@ -139,6 +177,50 @@ export function DetailPage() {
   }, [message, favorites]);
 
   const mediaRef = message?.type === "video" ? videoRef : audioRef;
+
+  const persistMediaProgress = useCallback(async (
+    position: number,
+    mediaDuration: number,
+    state: "in_progress" | "completed" = "in_progress",
+    keepalive = false,
+  ) => {
+    if (!user || !accessToken || !seriesContext || !message || message.type === "text") return;
+    if (progressSaveInFlightRef.current) {
+      queuedProgressRef.current = { position, duration: mediaDuration, state, keepalive };
+      return;
+    }
+    progressSaveInFlightRef.current = true;
+    try {
+      const measuredPercent = mediaDuration > 0 ? Math.round((position / mediaDuration) * 100) : 0;
+      const result = await submitOrQueueProgress({
+        ownerId: user.id,
+        seriesId: seriesContext.series.id,
+        messageId: message.id,
+        accessToken,
+        keepalive,
+        event: {
+          eventId: crypto.randomUUID(), state, progressPercent: measuredPercent,
+          positionSeconds: position, durationSeconds: mediaDuration,
+          clientUpdatedAt: new Date().toISOString(), source: "online",
+        },
+      });
+      if (result) {
+        const updated = result.module as ModuleProgress;
+        lastSavedPositionRef.current = updated.positionSeconds;
+        setIsModuleCompleted(updated.state === "completed");
+      } else {
+        lastSavedPositionRef.current = position;
+        if (state === "completed") setIsModuleCompleted(true);
+      }
+    } catch (error) {
+      console.error("Save media progress error:", error);
+    } finally {
+      progressSaveInFlightRef.current = false;
+      const queued = queuedProgressRef.current;
+      queuedProgressRef.current = null;
+      if (queued) void persistMediaProgress(queued.position, queued.duration, queued.state, queued.keepalive);
+    }
+  }, [accessToken, message, seriesContext, user]);
 
   // Determine best media URL: offline cached or original
   const offlineUrl = message ? getOfflineUrl(message.id) : null;
@@ -162,13 +244,53 @@ export function DetailPage() {
 
   const handleTimeUpdate = () => {
     const el = mediaRef.current;
-    if (el) setCurrentTime(el.currentTime);
+    if (el) {
+      setCurrentTime(el.currentTime);
+      const measuredPercent = el.duration > 0 ? (el.currentTime / el.duration) * 100 : 0;
+      if (measuredPercent >= 90 && !isModuleCompleted) {
+        void persistMediaProgress(el.currentTime, el.duration, "completed");
+      } else if (Math.abs(el.currentTime - lastSavedPositionRef.current) >= 15) {
+        void persistMediaProgress(el.currentTime, el.duration);
+      }
+    }
   };
 
   const handleLoadedMetadata = () => {
     const el = mediaRef.current;
-    if (el) setDuration(el.duration);
+    if (el) {
+      setDuration(el.duration);
+      if (resumePosition > 0 && el.currentTime < 1) {
+        el.currentTime = Math.min(resumePosition, Math.max(0, el.duration - 1));
+        setCurrentTime(el.currentTime);
+      }
+    }
   };
+
+  useEffect(() => {
+    const el = mediaRef.current;
+    if (el && duration > 0 && resumePosition > 0 && el.currentTime < 1) {
+      el.currentTime = Math.min(resumePosition, Math.max(0, duration - 1));
+      setCurrentTime(el.currentTime);
+    }
+  }, [duration, mediaRef, resumePosition]);
+
+  useEffect(() => {
+    const saveCurrentPosition = () => {
+      const el = mediaRef.current;
+      if (el && Number.isFinite(el.duration) && el.duration > 0) {
+        void persistMediaProgress(el.currentTime, el.duration, isModuleCompleted ? "completed" : "in_progress", true);
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") saveCurrentPosition();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", saveCurrentPosition);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", saveCurrentPosition);
+    };
+  }, [isModuleCompleted, mediaRef, persistMediaProgress]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const el = mediaRef.current;
@@ -221,7 +343,7 @@ export function DetailPage() {
   const handleDownload = async () => {
     if (!message) return;
     try {
-      await downloadMessage(message);
+      await downloadMessage(message, seriesContext?.series.id ?? null);
       toast.success("Telecharge pour lecture hors-ligne !");
     } catch (e: any) {
       toast.error(e.message || "Erreur lors du telechargement");
@@ -235,15 +357,26 @@ export function DetailPage() {
   };
 
   const handleMarkModuleComplete = async () => {
-    if (!accessToken || !seriesContext || !message) return;
-    const result = await markSeriesProgress(
-      seriesContext.series.id,
-      message.id,
-      accessToken
-    );
+    if (!user || !accessToken || !seriesContext || !message) return;
+    const submitted = await submitOrQueueProgress({
+      ownerId: user.id,
+      seriesId: seriesContext.series.id,
+      messageId: message.id,
+      accessToken,
+      event: {
+        eventId: crypto.randomUUID(), state: "completed", progressPercent: 100,
+        positionSeconds: 0, durationSeconds: 0, clientUpdatedAt: new Date().toISOString(), source: "manual",
+      },
+    });
+    const result = submitted?.progress ?? null;
+    if (!submitted) {
+      setIsModuleCompleted(true);
+      toast.success("Progression conservee hors ligne. Synchronisation au retour du reseau.");
+      return;
+    }
     if (result) {
       setIsModuleCompleted(true);
-      const total = seriesContext.series.totalModules;
+      const total = result.totalModules;
       if (result.completedMessageIds.length === total) {
         toast.success("Felicitations ! Serie terminee !");
       } else {
@@ -305,7 +438,7 @@ export function DetailPage() {
       ? "bg-[#9b1b30]"
       : "bg-[#4a6fa5]";
 
-  const canDownload = message.type !== "text" && !!message.mediaUrl;
+  const canDownload = Boolean(accessToken && message.offlineDownloadable && (message.type === "text" || message.mediaUrl));
 
   return (
     <div className="min-h-screen bg-background max-w-lg mx-auto lg:max-w-3xl lg:ml-[240px]">
@@ -377,7 +510,14 @@ export function DetailPage() {
               src={effectiveMediaUrl}
               onTimeUpdate={handleTimeUpdate}
               onLoadedMetadata={handleLoadedMetadata}
-              onEnded={() => setIsPlaying(false)}
+              onPause={() => {
+                setIsPlaying(false);
+                if (videoRef.current) void persistMediaProgress(videoRef.current.currentTime, videoRef.current.duration);
+              }}
+              onEnded={() => {
+                setIsPlaying(false);
+                if (videoRef.current) void persistMediaProgress(videoRef.current.duration, videoRef.current.duration, "completed");
+              }}
               className="w-full h-full object-contain"
               playsInline
             />
@@ -451,7 +591,14 @@ export function DetailPage() {
               src={effectiveMediaUrl}
               onTimeUpdate={handleTimeUpdate}
               onLoadedMetadata={handleLoadedMetadata}
-              onEnded={() => setIsPlaying(false)}
+              onPause={() => {
+                setIsPlaying(false);
+                if (audioRef.current) void persistMediaProgress(audioRef.current.currentTime, audioRef.current.duration);
+              }}
+              onEnded={() => {
+                setIsPlaying(false);
+                if (audioRef.current) void persistMediaProgress(audioRef.current.duration, audioRef.current.duration, "completed");
+              }}
             />
           )}
           {/* Disc animation */}

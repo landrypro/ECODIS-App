@@ -3,18 +3,18 @@ import { useNavigate } from "react-router";
 import { useAuth } from "../auth-context";
 // Platform-utils import removed — dashboard is now responsive on all viewports
 import {
-  fetchAdminStats, fetchAllUsers, fetchMessages, fetchAllSeries, fetchAppConfig,
+  fetchAdminStats, fetchAllUsers, fetchAdminMessages, fetchAdminSeries, fetchAppConfig,
   updateAppConfig, fetchAuditLogs, clearAuditLogs, fetchStorageStats,
-  updateUserRole, deleteUser, deleteMessage, deleteSeries, bulkDeleteMessages,
+  deleteMessage, deleteSeries, bulkDeleteMessages,
   fetchSystemHealth, fetchCategories, updateCategories,
   fetchAnnouncements, createAnnouncement, deleteAnnouncement, exportDataAsJson,
-  createMessage, signupUser, createSeries,
-  AdminStats, AppUser, Message, Series, AppConfig, AuditLog, StorageStats,
+  createMessage, updateMessage, createSeries, transitionMessage, transitionSeries,
+  AdminStats, AppUser, Message, Series, AppConfig, AuditLog, StorageStats, EditorialStatus,
   SystemHealth, Announcement,
 } from "../api";
 import {
   LayoutDashboard, Users, FileText, Settings, Shield, HardDrive, BarChart3,
-  Loader2, ShieldOff, Crown, Search, Trash2, Save, X, RefreshCw, AlertTriangle,
+  Loader2, ShieldOff, Search, Trash2, Save, X, RefreshCw, AlertTriangle,
   CheckCircle, Eye, Mic, Video, FileText as FileTextIcon, Heart, MessageSquare, Layers,
   TrendingUp, Percent, Bell, Download, Plus, ArrowLeft,
   Activity, Info, Database, ChevronRight, Tag, Send,
@@ -30,14 +30,13 @@ import { toast } from "sonner";
 
 // ==================== TYPES ====================
 type Section =
-  | "overview" | "users" | "content" | "config" | "appearance"
+  | "overview" | "content" | "config" | "appearance"
   | "categories" | "notifications" | "security" | "storage" | "stats" | "system" | "export";
 
 interface NavItem { key: Section; label: string; icon: any; group: string }
 
 const NAV_ITEMS: NavItem[] = [
   { key: "overview", label: "Vue d'ensemble", icon: LayoutDashboard, group: "Principal" },
-  { key: "users", label: "Utilisateurs", icon: Users, group: "Principal" },
   { key: "content", label: "Gestion du contenu", icon: FileText, group: "Principal" },
   { key: "stats", label: "Statistiques", icon: BarChart3, group: "Principal" },
   { key: "config", label: "Configuration", icon: Settings, group: "Parametres" },
@@ -156,8 +155,8 @@ export function AdminDashboardPage() {
       const [st, us, ms, sr, cf, al, sg, hl, cats, ann] = await Promise.all([
         fetchAdminStats(accessToken),
         fetchAllUsers(accessToken),
-        fetchMessages(),
-        fetchAllSeries(),
+        fetchAdminMessages(accessToken),
+        fetchAdminSeries(accessToken),
         fetchAppConfig(accessToken),
         fetchAuditLogs(accessToken),
         fetchStorageStats(accessToken),
@@ -223,7 +222,10 @@ export function AdminDashboardPage() {
               return (
                 <button
                   key={item.key}
-                  onClick={() => { setActiveSection(item.key); setMobileSidebar(false); }}
+                  onClick={() => {
+                    setActiveSection(item.key);
+                    setMobileSidebar(false);
+                  }}
                   title={item.label}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl mb-0.5 text-[12px] font-medium transition-all ${
                     active
@@ -317,7 +319,6 @@ export function AdminDashboardPage() {
           ) : (
             <>
               {activeSection === "overview" && <OverviewSection stats={stats} users={users} messages={messages} series={series} auditLogs={auditLogs} health={health} navigate={navigate} setActiveSection={setActiveSection} />}
-              {activeSection === "users" && <UsersSection users={users} setUsers={setUsers} accessToken={accessToken!} currentUserId={user.id} />}
               {activeSection === "content" && <ContentSection messages={messages} series={series} setMessages={setMessages} setSeries={setSeries} accessToken={accessToken!} navigate={navigate} />}
               {activeSection === "config" && <ConfigSection config={config} setConfig={setConfig} accessToken={accessToken!} />}
               {activeSection === "appearance" && <AppearanceSection config={config} setConfig={setConfig} accessToken={accessToken!} />}
@@ -439,7 +440,7 @@ function OverviewSection({ stats, users, messages, series, auditLogs, health, na
             <h3 className="text-[14px] font-semibold text-foreground flex items-center gap-2">
               <Users className="w-4 h-4 text-primary" /> Derniers inscrits
             </h3>
-            <button onClick={() => setActiveSection("users")} className="text-[10px] text-[#152a6b] hover:underline font-medium">Gerer</button>
+            <button onClick={() => navigate("/admin/users")} className="text-[10px] text-[#152a6b] hover:underline font-medium">Gerer</button>
           </div>
           <div className="space-y-1.5">
             {recentUsers.map((u: AppUser) => (
@@ -499,7 +500,7 @@ function OverviewSection({ stats, users, messages, series, auditLogs, health, na
             {[
               { label: "Nouveau message", icon: Plus, color: "bg-[#152a6b]", onClick: () => setActiveSection("content") },
               { label: "Creer programme", icon: BookOpen, color: "bg-purple-600", onClick: () => setActiveSection("content") },
-              { label: "Creer utilisateur", icon: UserPlus, color: "bg-[#9b1b30]", onClick: () => setActiveSection("users") },
+              { label: "Gerer les utilisateurs", icon: UserPlus, color: "bg-[#9b1b30]", onClick: () => navigate("/admin/users") },
               { label: "Exporter", icon: Download, color: "bg-emerald-600", onClick: () => setActiveSection("export") },
             ].map((a) => (
               <button key={a.label} onClick={a.onClick} className="flex items-center gap-2 p-3 rounded-xl border border-border hover:bg-muted/50 transition-colors text-left active:scale-[0.98]">
@@ -516,200 +517,27 @@ function OverviewSection({ stats, users, messages, series, auditLogs, health, na
   );
 }
 
-// ==================== USERS ====================
-function UsersSection({ users, setUsers, accessToken, currentUserId }: { users: AppUser[]; setUsers: any; accessToken: string; currentUserId: string }) {
-  const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
-  const [deletingUser, setDeletingUser] = useState<string | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newEmail, setNewEmail] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [creating, setCreating] = useState(false);
-
-  const filtered = users.filter((u) => {
-    const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
-    const matchRole = roleFilter === "all" || u.role === roleFilter;
-    return matchSearch && matchRole;
-  });
-
-  const admins = users.filter(u => u.role === "admin").length;
-
-  const handleRoleChange = async (userId: string, newRole: string) => {
-    setUpdatingRole(userId);
-    try {
-      await updateUserRole(userId, newRole, accessToken);
-      setUsers((prev: AppUser[]) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
-      toast.success("Role mis a jour");
-    } catch (e: any) { toast.error(e.message); } finally { setUpdatingRole(null); }
-  };
-
-  const handleDelete = async (userId: string) => {
-    if (!confirm("Supprimer cet utilisateur ? Cette action est irreversible.")) return;
-    setDeletingUser(userId);
-    try {
-      await deleteUser(userId, accessToken);
-      setUsers((prev: AppUser[]) => prev.filter((u) => u.id !== userId));
-      toast.success("Utilisateur supprime");
-    } catch (e: any) { toast.error(e.message); } finally { setDeletingUser(null); }
-  };
-
-  const handleCreateUser = async () => {
-    if (!newEmail.trim() || !newName.trim() || newPassword.length < 6) {
-      toast.error("Veuillez remplir tous les champs (mot de passe min. 6 caracteres)");
-      return;
-    }
-    setCreating(true);
-    try {
-      const result = await signupUser(newEmail.trim(), newPassword, newName.trim());
-      if (result?.user) {
-        setUsers((prev: AppUser[]) => [...prev, {
-          id: result.user.id,
-          email: result.user.email || newEmail.trim(),
-          name: newName.trim(),
-          role: result.role || "user",
-          createdAt: new Date().toISOString(),
-          lastSignIn: null,
-        }]);
-        toast.success(`Utilisateur "${newName.trim()}" cree avec succes`);
-        setNewEmail("");
-        setNewName("");
-        setNewPassword("");
-        setShowCreateForm(false);
-      }
-    } catch (e: any) { toast.error(`Erreur: ${e.message}`); } finally { setCreating(false); }
-  };
-
-  return (
-    <div className="space-y-5">
-      <SectionHeader icon={Users} title="Gestion des utilisateurs" actions={
-        <button onClick={() => setShowCreateForm(!showCreateForm)} className="px-4 py-2 bg-[#152a6b] text-white rounded-xl text-[12px] font-semibold flex items-center gap-1.5 active:scale-[0.98]">
-          {showCreateForm ? <X className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
-          {showCreateForm ? "Annuler" : "Creer un utilisateur"}
-        </button>
-      } />
-
-      {/* Create user form */}
-      {showCreateForm && (
-        <Card className="p-6 border-l-4 border-l-[#152a6b]">
-          <h3 className="text-[14px] font-semibold text-foreground flex items-center gap-2 mb-4">
-            <UserPlus className="w-4 h-4 text-[#152a6b]" /> Creer un nouvel utilisateur
-          </h3>
-          <div className="grid md:grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Nom complet *</label>
-              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jean Dupont" className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Email *</label>
-              <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="jean@eglise.org" className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Mot de passe * (min 6 car.)</label>
-              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="••••••" className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={handleCreateUser} disabled={creating || !newEmail.trim() || !newName.trim() || newPassword.length < 6} className="px-5 py-2.5 bg-[#152a6b] text-white rounded-xl text-[12px] font-semibold flex items-center gap-2 disabled:opacity-50 active:scale-[0.98]">
-              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />} Creer le compte
-            </button>
-            <p className="text-[10px] text-muted-foreground">L'utilisateur sera cree avec le role "Membre". Vous pourrez le promouvoir admin apres creation.</p>
-          </div>
-        </Card>
-      )}
-
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
-        <KpiCard icon={Users} label="Total utilisateurs" value={users.length} color="bg-[#152a6b]/10 text-[#152a6b]" />
-        <KpiCard icon={Crown} label="Administrateurs" value={admins} color="bg-amber-100 text-amber-600" />
-        <KpiCard icon={Users} label="Membres" value={users.length - admins} color="bg-[#4a6fa5]/10 text-[#4a6fa5]" />
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher par nom ou email..." className="w-full pl-10 pr-4 py-2.5 bg-white rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
-        </div>
-        <div className="flex gap-1">
-          {["all", "admin", "user"].map(r => (
-            <button key={r} onClick={() => setRoleFilter(r)} className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors ${roleFilter === r ? "bg-[#152a6b] text-white" : "bg-white border text-muted-foreground hover:text-foreground"}`}>
-              {r === "all" ? "Tous" : r === "admin" ? "Admins" : "Membres"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Table */}
-      <Card className="overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border bg-muted/30">
-              <th className="text-left text-[11px] font-semibold text-muted-foreground px-5 py-3">Utilisateur</th>
-              <th className="text-left text-[11px] font-semibold text-muted-foreground px-5 py-3">Role</th>
-              <th className="text-left text-[11px] font-semibold text-muted-foreground px-5 py-3">Inscription</th>
-              <th className="text-left text-[11px] font-semibold text-muted-foreground px-5 py-3">Derniere connexion</th>
-              <th className="text-right text-[11px] font-semibold text-muted-foreground px-5 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((u) => (
-              <tr key={u.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold ${u.role === "admin" ? "bg-amber-100 text-amber-700" : "bg-[#152a6b]/10 text-[#152a6b]"}`}>
-                      {u.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-medium text-foreground">
-                        {u.name}
-                        {u.id === currentUserId && <span className="text-[9px] bg-[#152a6b]/10 text-[#152a6b] px-1.5 py-0.5 rounded ml-1.5">Vous</span>}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">{u.email}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-5 py-3">
-                  <span className={`text-[10px] px-2.5 py-1 rounded-full font-semibold ${u.role === "admin" ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
-                    {u.role === "admin" ? "Admin" : "Membre"}
-                  </span>
-                </td>
-                <td className="px-5 py-3 text-[11px] text-muted-foreground">{new Date(u.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}</td>
-                <td className="px-5 py-3 text-[11px] text-muted-foreground">{u.lastSignIn ? relativeTime(u.lastSignIn) : "Jamais"}</td>
-                <td className="px-5 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <button
-                      onClick={() => handleRoleChange(u.id, u.role === "admin" ? "user" : "admin")}
-                      disabled={updatingRole === u.id || u.id === currentUserId}
-                      className="px-3 py-1.5 text-[10px] rounded-lg border hover:bg-muted disabled:opacity-30 transition-colors font-medium"
-                    >
-                      {updatingRole === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : u.role === "admin" ? "Retirer admin" : "Promouvoir"}
-                    </button>
-                    <button
-                      onClick={() => handleDelete(u.id)}
-                      disabled={deletingUser === u.id || u.id === currentUserId}
-                      className="w-8 h-8 rounded-lg border border-[#9b1b30]/20 hover:bg-[#9b1b30]/10 flex items-center justify-center disabled:opacity-30 transition-colors"
-                    >
-                      {deletingUser === u.id ? <Loader2 className="w-3 h-3 animate-spin text-[#9b1b30]" /> : <Trash2 className="w-3.5 h-3.5 text-[#9b1b30]" />}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {filtered.length === 0 && <div className="text-center py-12 text-muted-foreground text-sm">Aucun utilisateur trouve</div>}
-      </Card>
-    </div>
-  );
-}
-
 // ==================== CONTENT ====================
 const CATEGORIES_BY_TYPE: Record<string, string[]> = {
   audio: ["Predications", "Enseignements", "Louanges", "Temoignages"],
   video: ["Cultes", "Seminaires", "Formations", "Conferences"],
   text: ["Etudes bibliques", "Meditations", "Articles", "Notes de predication"],
+};
+
+const EDITORIAL_STATUS_LABELS: Record<EditorialStatus, string> = {
+  draft: "Brouillon",
+  in_review: "En revue",
+  scheduled: "Planifie",
+  published: "Publie",
+  archived: "Archive",
+};
+
+const EDITORIAL_STATUS_STYLES: Record<EditorialStatus, string> = {
+  draft: "bg-slate-100 text-slate-700",
+  in_review: "bg-amber-100 text-amber-800",
+  scheduled: "bg-violet-100 text-violet-800",
+  published: "bg-emerald-100 text-emerald-800",
+  archived: "bg-zinc-200 text-zinc-700",
 };
 
 function ContentSection({ messages, series, setMessages, setSeries, accessToken, navigate }: any) {
@@ -721,13 +549,50 @@ function ContentSection({ messages, series, setMessages, setSeries, accessToken,
   const [showAddMessage, setShowAddMessage] = useState(false);
   const [showAddSeries, setShowAddSeries] = useState(false);
 
+  const replaceMessage = (updated: Message) => setMessages((previous: Message[]) => previous.map((item) => item.id === updated.id ? updated : item));
+  const replaceSeries = (updated: Series) => setSeries((previous: Series[]) => previous.map((item) => item.id === updated.id ? updated : item));
+  const transitionEntity = async (kind: "message" | "series", id: string, status: EditorialStatus) => {
+    let scheduledAt: string | undefined;
+    if (status === "scheduled") {
+      const input = window.prompt("Date de publication (ex. 2026-08-22T09:00:00Z) :");
+      if (!input) return;
+      scheduledAt = input;
+    }
+    try {
+      const updated = kind === "message"
+        ? await transitionMessage(id, status, accessToken, scheduledAt)
+        : await transitionSeries(id, status, accessToken, scheduledAt);
+      if (kind === "message") replaceMessage(updated as Message);
+      else replaceSeries(updated as Series);
+      toast.success(`Statut mis a jour : ${EDITORIAL_STATUS_LABELS[status]}`);
+    } catch (error: any) {
+      toast.error(error.message || "Transition editoriale impossible");
+    }
+  };
+
+  const availableTransitions = (status: EditorialStatus): EditorialStatus[] => {
+    const transitions: Record<EditorialStatus, EditorialStatus[]> = {
+    draft: ["in_review", "archived"],
+    in_review: ["draft", "scheduled", "published", "archived"],
+    scheduled: ["draft", "in_review", "published", "archived"],
+    published: ["draft", "archived"],
+    archived: ["draft"],
+    };
+    return transitions[status];
+  };
+
   const filtered = messages.filter((m: Message) => {
     const matchSearch = m.title.toLowerCase().includes(search.toLowerCase()) || m.author.toLowerCase().includes(search.toLowerCase());
     const matchType = typeFilter === "all" || m.type === typeFilter;
     return matchSearch && matchType;
   });
 
-  const toggleSelect = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleSelect = (id: string) => setSelected((previous) => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
   const toggleSelectAll = () => { if (selected.size === filtered.length) setSelected(new Set()); else setSelected(new Set(filtered.map((m: Message) => m.id))); };
 
   const handleBulkDelete = async () => {
@@ -794,6 +659,7 @@ function ContentSection({ messages, series, setMessages, setSeries, accessToken,
                   <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Message</th>
                   <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Type</th>
                   <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Categorie</th>
+                  <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Statut</th>
                   <th className="text-left text-[11px] font-semibold text-muted-foreground px-4 py-3">Date</th>
                   <th className="text-right text-[11px] font-semibold text-muted-foreground px-4 py-3">Actions</th>
                 </tr>
@@ -813,11 +679,19 @@ function ContentSection({ messages, series, setMessages, setSeries, accessToken,
                     </td>
                     <td className="px-4 py-3"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${typeColor(m.type)}`}>{m.type}</span></td>
                     <td className="px-4 py-3 text-[11px] text-muted-foreground">{m.category}</td>
+                    <td className="px-4 py-3"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${EDITORIAL_STATUS_STYLES[m.status]}`}>{EDITORIAL_STATUS_LABELS[m.status]}</span></td>
                     <td className="px-4 py-3 text-[11px] text-muted-foreground">{new Date(m.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1">
                         <button onClick={() => navigate(`/message/${m.id}`)} className="w-7 h-7 rounded-lg border hover:bg-muted flex items-center justify-center"><Eye className="w-3 h-3" /></button>
-                        <button onClick={async () => { if (!confirm("Supprimer ?")) return; await deleteMessage(m.id, accessToken); setMessages((p: Message[]) => p.filter(x => x.id !== m.id)); toast.success("Supprime"); }} className="w-7 h-7 rounded-lg border border-[#9b1b30]/20 hover:bg-[#9b1b30]/10 flex items-center justify-center"><Trash2 className="w-3 h-3 text-[#9b1b30]" /></button>
+                        <button onClick={async () => {
+                          const updated = await updateMessage(m.id, { offlineDownloadable: !m.offlineDownloadable }, accessToken);
+                          if (updated) setMessages((items: Message[]) => items.map((item) => item.id === m.id ? updated : item));
+                        }} className={`px-2 py-1 rounded-lg border text-[10px] ${m.offlineDownloadable ? "text-emerald-700 border-emerald-200" : "text-muted-foreground"}`}>
+                          {m.offlineDownloadable ? "Hors ligne autorise" : "Hors ligne bloque"}
+                        </button>
+                        {availableTransitions(m.status).map((status) => <button key={status} onClick={() => transitionEntity("message", m.id, status)} className="px-2 py-1 rounded-lg border text-[10px] hover:bg-muted">{EDITORIAL_STATUS_LABELS[status]}</button>)}
+                        {m.status === "draft" && <button onClick={async () => { if (!confirm("Supprimer ce brouillon ?")) return; await deleteMessage(m.id, accessToken); setMessages((p: Message[]) => p.filter(x => x.id !== m.id)); toast.success("Brouillon supprime"); }} className="w-7 h-7 rounded-lg border border-[#9b1b30]/20 hover:bg-[#9b1b30]/10 flex items-center justify-center"><Trash2 className="w-3 h-3 text-[#9b1b30]" /></button>}
                       </div>
                     </td>
                   </tr>
@@ -851,12 +725,14 @@ function ContentSection({ messages, series, setMessages, setSeries, accessToken,
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-semibold text-foreground truncate">{s.title}</p>
                     <p className="text-[10px] text-muted-foreground">{s.author} · {s.totalModules} modules</p>
+                    <span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full font-medium ${EDITORIAL_STATUS_STYLES[s.status]}`}>{EDITORIAL_STATUS_LABELS[s.status]}</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground line-clamp-2 mb-3">{s.description}</p>
                 <div className="flex gap-2">
                   <button onClick={() => navigate(`/series/${s.id}`)} className="flex-1 py-2 text-[11px] bg-muted rounded-lg text-center hover:bg-muted/80 font-medium">Voir</button>
-                  <button onClick={async () => { if (!confirm("Supprimer cette serie ?")) return; await deleteSeries(s.id, accessToken); setSeries((p: Series[]) => p.filter(x => x.id !== s.id)); toast.success("Serie supprimee"); }} className="py-2 px-4 text-[11px] bg-[#9b1b30]/10 text-[#9b1b30] rounded-lg hover:bg-[#9b1b30]/20 font-medium">Supprimer</button>
+                  {availableTransitions(s.status).map((status) => <button key={status} onClick={() => transitionEntity("series", s.id, status)} className="py-2 px-2 text-[10px] border rounded-lg hover:bg-muted">{EDITORIAL_STATUS_LABELS[status]}</button>)}
+                  {s.status === "draft" && <button onClick={async () => { if (!confirm("Supprimer ce brouillon ?")) return; await deleteSeries(s.id, accessToken); setSeries((p: Series[]) => p.filter(x => x.id !== s.id)); toast.success("Brouillon supprime"); }} className="py-2 px-4 text-[11px] bg-[#9b1b30]/10 text-[#9b1b30] rounded-lg hover:bg-[#9b1b30]/20 font-medium">Supprimer</button>}
                 </div>
               </Card>
             ))}
@@ -901,7 +777,7 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
 
       const msg = await createMessage(formData, accessToken);
       if (msg) {
-        toast.success(`Message "${title.trim()}" publie avec succes !`);
+        toast.success(`Brouillon "${title.trim()}" cree avec succes !`);
         onCreated(msg);
       }
     } catch (e: any) { toast.error(`Erreur: ${e.message}`); } finally { setPublishing(false); }
@@ -916,7 +792,7 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
   return (
     <Card className="p-6 border-l-4 border-l-[#152a6b]">
       <h3 className="text-[14px] font-semibold text-foreground flex items-center gap-2 mb-5">
-        <Plus className="w-4 h-4 text-[#152a6b]" /> Publier un nouveau message
+        <Plus className="w-4 h-4 text-[#152a6b]" /> Creer un brouillon de message
       </h3>
 
       {/* Type selector */}
@@ -1004,7 +880,7 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
       {/* Submit */}
       <div className="flex items-center gap-3">
         <button onClick={handleSubmit} disabled={publishing || !canSubmit} className="px-5 py-2.5 bg-[#152a6b] text-white rounded-xl text-[12px] font-semibold flex items-center gap-2 disabled:opacity-50 active:scale-[0.98]">
-          {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Publier le message
+          {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Enregistrer le brouillon
         </button>
         {!canSubmit && <p className="text-[10px] text-muted-foreground">Remplissez les champs marques * pour publier</p>}
       </div>
@@ -1059,7 +935,7 @@ function CreateSeriesForm({ accessToken, messages, onCreated }: { accessToken: s
         messageIds: selectedMsgIds,
       }, accessToken);
       if (s) {
-        toast.success(`Programme "${title.trim()}" cree avec ${selectedMsgIds.length} modules !`);
+        toast.success(`Brouillon de programme "${title.trim()}" cree avec ${selectedMsgIds.length} modules !`);
         onCreated(s);
       }
     } catch (e: any) { toast.error(`Erreur: ${e.message}`); } finally { setCreating(false); }
@@ -1282,6 +1158,10 @@ function ConfigSection({ config, setConfig, accessToken }: { config: AppConfig |
           <div>
             <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Taille max upload (Mo)</label>
             <input type="number" value={form.maxUploadSizeMb || 100} onChange={e => setForm({ ...form, maxUploadSizeMb: parseInt(e.target.value) })} className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Quota hors ligne par appareil (Mo)</label>
+            <input type="number" min={50} max={2048} value={form.maxOfflineStorageMb || 1024} onChange={e => setForm({ ...form, maxOfflineStorageMb: parseInt(e.target.value) })} className="w-full px-3 py-2.5 bg-muted/30 rounded-xl text-[13px] border border-border focus:ring-2 focus:ring-[#152a6b]/20 focus:outline-none" />
           </div>
           <div>
             <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">Langue par defaut</label>

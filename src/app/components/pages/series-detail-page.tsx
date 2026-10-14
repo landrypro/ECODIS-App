@@ -9,18 +9,20 @@ export function SeriesDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { accessToken, user } = useAuth();
-  const { data, isLoading } = useSeriesDetail(id);
+  const { data, isLoading } = useSeriesDetail(id, accessToken);
   const { data: progress } = useSeriesProgress(id, accessToken, user?.id);
   const markProgress = useMarkSeriesProgress(accessToken, user?.id);
 
   const series = data?.series ?? null;
   const messages = data?.messages ?? [];
   const completedIds = progress?.completedMessageIds || [];
-  const totalModules = series?.totalModules || 0;
+  const totalModules = progress?.totalModules ?? messages.length;
   const completedCount = completedIds.length;
-  const pct = totalModules > 0 ? Math.round((completedCount / totalModules) * 100) : 0;
-  const isCompleted = pct === 100;
-  const nextUncompletedIndex = messages.findIndex((message) => !completedIds.includes(message.id));
+  const pct = progress?.progressPercent ?? (totalModules > 0 ? Math.round((completedCount / totalModules) * 100) : 0);
+  const isCompleted = progress?.isCompleted ?? pct === 100;
+  const nextUncompletedIndex = progress?.nextMessageId
+    ? messages.findIndex((message) => message.id === progress.nextMessageId)
+    : messages.findIndex((message) => !completedIds.includes(message.id));
   const nextMessage = nextUncompletedIndex >= 0 ? messages[nextUncompletedIndex] : null;
 
   const handleMarkComplete = async (messageId: string) => {
@@ -94,12 +96,13 @@ export function SeriesDetailPage() {
         <div className="space-y-2">
           {messages.map((message, index) => {
             const done = completedIds.includes(message.id);
+            const moduleProgress = progress?.modules?.[message.id];
             return (
               <div key={message.id} className={`bg-card rounded-xl border overflow-hidden shadow-sm ${done ? "border-emerald-200 bg-emerald-50/50" : "border-border"}`}>
                 <div className="flex items-center gap-3 p-3">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center ${done ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}>{done ? <CheckCircle2 className="w-4 h-4" /> : <span className="text-[11px] font-medium">{index + 1}</span>}</div>
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${typeStyle(message.type)}`}>{typeIcon(message.type)}</div>
-                  <div className="flex-1 min-w-0"><p className="text-[13px] font-medium text-card-foreground line-clamp-1">{message.title}</p><p className="text-[10px] text-muted-foreground mt-0.5">{message.author}</p></div>
+                  <div className="flex-1 min-w-0"><p className="text-[13px] font-medium text-card-foreground line-clamp-1">{message.title}</p><p className="text-[10px] text-muted-foreground mt-0.5">{moduleProgress && !done ? (message.type === "text" ? "Lecture commencée" : `${moduleProgress.progressPercent}% · reprise à ${Math.floor(moduleProgress.positionSeconds / 60)}:${Math.floor(moduleProgress.positionSeconds % 60).toString().padStart(2, "0")}`) : message.author}</p></div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button onClick={() => navigate(`/message/${message.id}?series=${series.id}`)} className="px-3 py-1.5 rounded-lg bg-muted text-[11px]">Ouvrir</button>
                     {!done && <button onClick={() => handleMarkComplete(message.id)} className="px-3 py-1.5 rounded-lg bg-[#152a6b] text-white text-[11px]" disabled={markProgress.isPending}>Terminer</button>}

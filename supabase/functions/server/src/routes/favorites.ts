@@ -1,6 +1,6 @@
 import { Hono } from "npm:hono";
 import { handleApiError } from "../lib/errors.ts";
-import { assertMessageExists } from "../lib/messages.ts";
+import { assertPublishedMessage } from "../lib/messages.ts";
 import { getUser, supabaseAdmin } from "../lib/supabase.ts";
 import { validateRequiredString } from "../lib/validation.ts";
 
@@ -13,7 +13,7 @@ favoritesRoutes.post("/favorites/toggle", async (c) => {
 
     const { messageId } = await c.req.json();
     const validatedMessageId = validateRequiredString(messageId, "messageId", 1, 255);
-    await assertMessageExists(validatedMessageId);
+    await assertPublishedMessage(validatedMessageId);
 
     const admin = supabaseAdmin();
     const { data: existing } = await admin

@@ -9,18 +9,35 @@ export interface Message {
   thumbnail: string;
   mediaPath: string;
   mediaUrl?: string;
+  offlineDownloadable: boolean;
+  contentVersion: number;
+  status: EditorialStatus;
+  publishedAt: string | null;
+  scheduledAt: string | null;
   createdAt: string;
   updatedAt?: string;
   userId: string | null;
 }
 
+export type EditorialStatus = "draft" | "in_review" | "scheduled" | "published" | "archived";
+
+export type AppRole = "user" | "content_editor" | "moderator" | "admin" | "super_admin";
+
 export interface AppUser {
   id: string;
   email: string;
   name: string;
-  role: string;
+  role: AppRole;
+  roles: AppRole[];
+  permissions?: string[];
   createdAt: string;
   lastSignIn: string | null;
+  emailConfirmedAt?: string | null;
+  invitedAt?: string | null;
+  accountStatus?: "active" | "suspended";
+  suspensionReason?: string | null;
+  suspendedAt?: string | null;
+  suspensionExpiresAt?: string | null;
 }
 
 export interface Comment {
@@ -30,7 +47,24 @@ export interface Comment {
   userName: string;
   userEmail: string;
   text: string;
+  status: "visible" | "hidden" | "deleted_by_author" | "deleted_by_moderation";
   createdAt: string;
+}
+
+export type CommentReportReason = "spam" | "harassment" | "inappropriate_content" | "misinformation" | "other";
+
+export interface CommentReport {
+  id: string;
+  commentId: string;
+  reporterId: string;
+  reason: CommentReportReason;
+  detail: string;
+  status: "open" | "resolved" | "dismissed";
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  resolutionNote: string;
+  createdAt: string;
+  comment: Comment | null;
 }
 
 export interface Series {
@@ -42,15 +76,59 @@ export interface Series {
   category: string;
   messageIds: string[];
   totalModules: number;
+  contentVersion: number;
+  status: EditorialStatus;
+  publishedAt: string | null;
+  scheduledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  userId: string | null;
 }
 
 export interface SeriesProgress {
   userId: string;
   seriesId: string;
+  modules: Record<string, ModuleProgress>;
   completedMessageIds: string[];
+  totalModules: number;
+  progressPercent: number;
+  nextMessageId: string | null;
+  isCompleted: boolean;
   lastAccessedAt: string | null;
+}
+
+export type ProgressState = "in_progress" | "completed";
+export type ProgressSource = "online" | "offline_sync" | "manual";
+
+export interface ModuleProgress {
+  messageId: string;
+  state: ProgressState;
+  progressPercent: number;
+  positionSeconds: number;
+  durationSeconds: number;
+  startedAt: string;
+  completedAt: string | null;
+  lastAccessedAt: string;
+  clientUpdatedAt: string;
+  serverUpdatedAt: string;
+  source: ProgressSource;
+}
+
+export interface ProgressEvent {
+  eventId: string;
+  state: ProgressState;
+  progressPercent: number;
+  positionSeconds: number;
+  durationSeconds: number;
+  clientUpdatedAt: string;
+  source: ProgressSource;
+}
+
+export interface ProgressUpdateResult {
+  eventId: string;
+  replayed: boolean;
+  module: ModuleProgress;
+  progress: SeriesProgress;
 }
 
 export interface AdminStats {
@@ -106,6 +184,7 @@ export interface AppConfig {
   commentsEnabled: boolean;
   downloadsEnabled: boolean;
   maxUploadSizeMb: number;
+  maxOfflineStorageMb: number;
   defaultLanguage: string;
   welcomeMessage: string;
   welcomeVerse: string;

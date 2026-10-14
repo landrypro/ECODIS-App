@@ -5,10 +5,10 @@ import {
   DownloadedMessage,
 } from "../download-context";
 import {
-  Download,
   Trash2,
   Mic,
   Video,
+  FileText,
   HardDrive,
   AlertTriangle,
   ChevronRight,
@@ -25,6 +25,13 @@ export function DownloadsPage() {
     storageQuota,
     removeDownload,
     clearAllDownloads,
+    configuredLimit,
+    isOnline,
+    isPersistent,
+    pendingProgress,
+    syncState,
+    lastSyncAt,
+    synchronize,
   } = useDownloads();
   const navigate = useNavigate();
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -52,6 +59,7 @@ export function DownloadsPage() {
 
   const audioDownloads = downloads.filter((d) => d.type === "audio");
   const videoDownloads = downloads.filter((d) => d.type === "video");
+  const textDownloads = downloads.filter((d) => d.type === "text");
 
   const renderDownloadItem = (item: DownloadedMessage) => {
     const isRemoving = removingId === item.id;
@@ -61,7 +69,7 @@ export function DownloadsPage() {
         className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-b-0"
       >
         <button
-          onClick={() => navigate(`/message/${item.id}`)}
+          onClick={() => navigate(`/message/${item.id}${item.seriesId ? `?series=${encodeURIComponent(item.seriesId)}` : ""}`)}
           className="flex items-center gap-3 flex-1 min-w-0 text-left"
         >
           <div
@@ -73,9 +81,9 @@ export function DownloadsPage() {
           >
             {item.type === "audio" ? (
               <Mic className="w-4 h-4" />
-            ) : (
+            ) : item.type === "video" ? (
               <Video className="w-4 h-4" />
-            )}
+            ) : <FileText className="w-4 h-4" />}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[13px] text-card-foreground truncate">
@@ -169,6 +177,14 @@ export function DownloadsPage() {
               </p>
             </div>
           )}
+          <div className="mt-3 pt-3 border-t border-border text-[11px] text-muted-foreground space-y-1">
+            <p>Limite ECODIS : {formatFileSize(configuredLimit)} · Stockage persistant : {isPersistent ? "oui" : "non garanti"}</p>
+            <p>Reseau : {isOnline ? "en ligne" : "hors ligne"} · Progressions en attente : {pendingProgress}</p>
+            <div className="flex items-center justify-between gap-3">
+              <span>Derniere synchronisation : {lastSyncAt ? new Date(lastSyncAt).toLocaleString("fr-FR") : "jamais"}</span>
+              <button disabled={!isOnline || syncState === "syncing"} onClick={() => void synchronize()} className="text-[#152a6b] font-medium disabled:opacity-50">{syncState === "syncing" ? "Synchronisation..." : "Synchroniser"}</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -215,6 +231,13 @@ export function DownloadsPage() {
           <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
             {videoDownloads.map(renderDownloadItem)}
           </div>
+        </div>
+      )}
+
+      {textDownloads.length > 0 && (
+        <div className="px-4 mb-4">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider px-1 mb-2">Textes ({textDownloads.length})</p>
+          <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">{textDownloads.map(renderDownloadItem)}</div>
         </div>
       )}
 

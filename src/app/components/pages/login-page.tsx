@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, Link, useLocation } from "react-router";
 import { useAuth } from "../auth-context";
 import { LogIn, Eye, EyeOff, Mail, Lock } from "lucide-react";
 import logoImg from "@/assets/18be1bb9126bc20903a4f39ba3a8f5fa468b188c.png";
@@ -7,6 +7,7 @@ import logoImg from "@/assets/18be1bb9126bc20903a4f39ba3a8f5fa468b188c.png";
 export function LoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -59,6 +60,12 @@ export function LoginPage() {
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg px-3 py-2 mb-4">
               {error}
+            </div>
+          )}
+
+          {location.state?.passwordReset && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-lg px-3 py-2 mb-4">
+              Votre mot de passe a ete mis a jour. Connectez-vous avec votre nouveau mot de passe.
             </div>
           )}
 
@@ -123,6 +130,12 @@ export function LoginPage() {
           </button>
 
           <p className="text-center text-xs text-gray-500 mt-4">
+            <Link to="/forgot-password" className="text-[#152a6b] font-medium">
+              Mot de passe oublie ?
+            </Link>
+          </p>
+
+          <p className="text-center text-xs text-gray-500 mt-3">
             Pas encore de compte ?{" "}
             <Link to="/signup" className="text-[#152a6b] font-medium">
               S'inscrire

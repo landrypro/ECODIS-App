@@ -77,8 +77,32 @@ export function validateBoolean(value: unknown, fieldName: string): boolean {
   return value;
 }
 
+export function validateAccountStatus(value: unknown): "active" | "suspended" {
+  if (value !== "active" && value !== "suspended") {
+    throw new ValidationError("Statut de compte invalide");
+  }
+  return value;
+}
+
 export function validateCommentText(text: unknown): string {
   return validateRequiredString(text, "Le commentaire", 1, 1000);
+}
+
+export const COMMENT_REPORT_REASONS = ["spam", "harassment", "inappropriate_content", "misinformation", "other"] as const;
+export type CommentReportReason = typeof COMMENT_REPORT_REASONS[number];
+
+export function validateCommentReportReason(value: unknown): CommentReportReason {
+  if (typeof value !== "string" || !COMMENT_REPORT_REASONS.includes(value as CommentReportReason)) {
+    throw new ValidationError("Motif de signalement invalide");
+  }
+  return value as CommentReportReason;
+}
+
+export function validateModerationAction(value: unknown): "hide" | "restore" | "delete" {
+  if (value !== "hide" && value !== "restore" && value !== "delete") {
+    throw new ValidationError("Action de modération invalide");
+  }
+  return value;
 }
 
 export function validateFileForMessage(type: "audio" | "video" | "text", mediaFile: File | null, maxUploadSizeMb: number) {
@@ -90,10 +114,12 @@ export function validateFileForMessage(type: "audio" | "video" | "text", mediaFi
   if (mediaFile.size > maxBytes) {
     throw new ValidationError(`Le fichier depasse la taille maximale de ${maxUploadSizeMb} Mo`);
   }
-  if (type === "audio" && !mediaFile.type.startsWith("audio/")) {
-    throw new ValidationError("Le fichier doit etre un audio valide");
-  }
-  if (type === "video" && !mediaFile.type.startsWith("video/")) {
-    throw new ValidationError("Le fichier doit etre une video valide");
+  const extension = mediaFile.name.split(".").pop()?.toLowerCase() ?? "";
+  const allowed = type === "audio"
+    ? new Map([["mp3", ["audio/mpeg", "audio/mp3"]], ["wav", ["audio/wav", "audio/x-wav"]], ["ogg", ["audio/ogg"]], ["m4a", ["audio/mp4", "audio/x-m4a"]], ["aac", ["audio/aac"]]])
+    : new Map([["mp4", ["video/mp4"]], ["webm", ["video/webm"]], ["mov", ["video/quicktime"]]]);
+  const acceptedMimeTypes = allowed.get(extension);
+  if (!acceptedMimeTypes || !acceptedMimeTypes.includes(mediaFile.type.toLowerCase())) {
+    throw new ValidationError(`Le fichier ${type} doit utiliser une extension et un type MIME autorises`);
   }
 }

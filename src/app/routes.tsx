@@ -1,14 +1,14 @@
-import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
+import { lazy, Suspense, type ComponentType } from "react";
 import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/layout";
 import { PageLoader } from "./components/page-loader";
 
-function lazyPage<T>(factory: () => Promise<{ default: ComponentType<T> }>) {
-  const LazyComponent: LazyExoticComponent<ComponentType<T>> = lazy(factory);
-  return function WrappedPage(props: T) {
+function lazyPage(factory: () => Promise<{ default: ComponentType }>) {
+  const LazyComponent = lazy(factory);
+  return function WrappedPage() {
     return (
       <Suspense fallback={<PageLoader />}>
-        <LazyComponent {...props} />
+        <LazyComponent />
       </Suspense>
     );
   };
@@ -23,12 +23,16 @@ const DownloadsPage = lazyPage(() => import("./components/pages/downloads-page")
 const SeriesListPage = lazyPage(() => import("./components/pages/series-list-page").then((module) => ({ default: module.SeriesListPage })));
 const LoginPage = lazyPage(() => import("./components/pages/login-page").then((module) => ({ default: module.LoginPage })));
 const SignupPage = lazyPage(() => import("./components/pages/signup-page").then((module) => ({ default: module.SignupPage })));
+const ForgotPasswordPage = lazyPage(() => import("./components/pages/forgot-password-page").then((module) => ({ default: module.ForgotPasswordPage })));
+const ResetPasswordPage = lazyPage(() => import("./components/pages/reset-password-page").then((module) => ({ default: module.ResetPasswordPage })));
+const MfaSecurityPage = lazyPage(() => import("./components/pages/mfa-security-page").then((module) => ({ default: module.MfaSecurityPage })));
 const DetailPage = lazyPage(() => import("./components/pages/detail-page").then((module) => ({ default: module.DetailPage })));
 const AdminPage = lazyPage(() => import("./components/pages/admin-page").then((module) => ({ default: module.AdminPage })));
 const AdminUsersPage = lazyPage(() => import("./components/pages/admin-users-page").then((module) => ({ default: module.AdminUsersPage })));
 const AdminStatsPage = lazyPage(() => import("./components/pages/admin-stats-page").then((module) => ({ default: module.AdminStatsPage })));
 const AdminDashboardPage = lazyPage(() => import("./components/pages/admin-dashboard-page").then((module) => ({ default: module.AdminDashboardPage })));
 const SeriesDetailPage = lazyPage(() => import("./components/pages/series-detail-page").then((module) => ({ default: module.SeriesDetailPage })));
+const ModerationPage = lazyPage(() => import("./components/pages/moderation-page").then((module) => ({ default: module.ModerationPage })));
 
 export const router = createBrowserRouter([
   {
@@ -42,10 +46,14 @@ export const router = createBrowserRouter([
       { path: "profil", Component: ProfilPage },
       { path: "downloads", Component: DownloadsPage },
       { path: "series", Component: SeriesListPage },
+      { path: "moderation", Component: ModerationPage },
     ],
   },
   { path: "/login", Component: LoginPage },
   { path: "/signup", Component: SignupPage },
+  { path: "/forgot-password", Component: ForgotPasswordPage },
+  { path: "/reset-password", Component: ResetPasswordPage },
+  { path: "/security/mfa", Component: MfaSecurityPage },
   { path: "/message/:id", Component: DetailPage },
   { path: "/admin", Component: AdminPage },
   { path: "/admin/users", Component: AdminUsersPage },

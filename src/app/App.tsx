@@ -6,6 +6,7 @@ import { AuthProvider } from "./components/auth-context";
 import { DownloadProvider } from "./components/download-context";
 import { PlatformProvider } from "./components/platform-utils";
 import { Toaster } from "sonner";
+import { MfaChallengeDialog } from "./components/mfa-challenge-dialog";
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <AuthProvider>
           <DownloadProvider>
             <RouterProvider router={router} />
+            <MfaChallengeDialog />
             <Toaster position="top-center" richColors />
           </DownloadProvider>
         </AuthProvider>

@@ -9,6 +9,11 @@ export function mapMessage(row: any) {
     duration: row.duration ?? "",
     thumbnail: row.thumbnail ?? "",
     mediaPath: row.media_path ?? "",
+    offlineDownloadable: row.offline_downloadable ?? true,
+    contentVersion: row.content_version ?? 1,
+    status: row.status ?? "published",
+    publishedAt: row.published_at ?? null,
+    scheduledAt: row.scheduled_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at ?? null,
     userId: row.user_id ?? null,
@@ -23,7 +28,40 @@ export function mapComment(row: any) {
     userName: row.user_name,
     userEmail: row.user_email,
     text: row.text,
+    status: row.status ?? "visible",
     createdAt: row.created_at,
+  };
+}
+
+export function mapCommentReport(row: any) {
+  return {
+    id: row.id,
+    commentId: row.comment_id,
+    reporterId: row.reporter_id,
+    reason: row.reason,
+    detail: row.detail ?? "",
+    status: row.status,
+    reviewedAt: row.reviewed_at ?? null,
+    reviewedBy: row.reviewed_by ?? null,
+    resolutionNote: row.resolution_note ?? "",
+    createdAt: row.created_at,
+    comment: row.comments ? mapComment(row.comments) : null,
+  };
+}
+
+export function mapModuleProgress(row: any) {
+  return {
+    messageId: row.message_id,
+    state: row.state,
+    progressPercent: row.progress_percent,
+    positionSeconds: row.position_seconds,
+    durationSeconds: row.duration_seconds,
+    startedAt: row.started_at,
+    completedAt: row.completed_at ?? null,
+    lastAccessedAt: row.last_accessed_at,
+    clientUpdatedAt: row.client_updated_at,
+    serverUpdatedAt: row.server_updated_at,
+    source: row.source,
   };
 }
 
@@ -37,8 +75,13 @@ export function mapSeries(row: any, messageIds: string[] = []) {
     category: row.category ?? "",
     messageIds,
     totalModules: row.total_modules ?? messageIds.length,
+    contentVersion: row.content_version ?? 1,
+    status: row.status ?? "published",
+    publishedAt: row.published_at ?? null,
+    scheduledAt: row.scheduled_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    userId: row.user_id ?? null,
   };
 }
 
@@ -62,6 +105,7 @@ export function mapAppConfig(row: any) {
     commentsEnabled: row.comments_enabled,
     downloadsEnabled: row.downloads_enabled,
     maxUploadSizeMb: row.max_upload_size_mb,
+    maxOfflineStorageMb: row.max_offline_storage_mb ?? 1024,
     defaultLanguage: row.default_language,
     welcomeMessage: row.welcome_message,
     welcomeVerse: row.welcome_verse,

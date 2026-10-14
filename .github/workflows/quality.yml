@@ -1,0 +1,89 @@
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend quality and build
+    runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: https://ci.supabase.invalid
+      VITE_SUPABASE_ANON_KEY: ci-public-key
+      VITE_SUPABASE_FUNCTIONS_BASE_URL: http://localhost/functions/v1/server/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ecodis-frontend-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 14
+
+  backend:
+    name: Edge Function Deno
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check --config supabase/functions/server/deno.json supabase/functions/server/index.ts
+      - run: deno test --config supabase/functions/server/deno.json --allow-env --allow-net supabase/functions/server
+
+  end-to-end:
+    name: End-to-end browser
+    runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: https://ci.supabase.invalid
+      VITE_SUPABASE_ANON_KEY: ci-public-key
+      VITE_SUPABASE_FUNCTIONS_BASE_URL: http://localhost/functions/v1/server/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
+  migrations:
+    name: Supabase migration rehearsal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.114.0
+      - run: supabase start
+      - run: supabase db reset --local
+      - run: supabase db lint --local
+      - if: ${{ always() }}
+        run: supabase stop --no-backup

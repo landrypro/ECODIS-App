@@ -37,7 +37,12 @@ export function SignupPage() {
     } catch (err: any) {
       console.error("Signup error:", err);
       const msg = err.message || "";
-      if (msg.toLowerCase().includes("already been registered") || msg.toLowerCase().includes("already exists")) {
+      if (
+        err?.status === 409
+        || msg.toLowerCase().includes("already been registered")
+        || msg.toLowerCase().includes("already exists")
+        || msg.toLowerCase().includes("existe deja")
+      ) {
         setErrorType("duplicate");
         setError("Un compte avec cet email existe deja.");
       } else {

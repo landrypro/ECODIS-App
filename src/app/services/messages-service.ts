@@ -1,5 +1,5 @@
 import { fetchJson, getHeaders, jsonHeaders } from "./http";
-import type { Message } from "./types";
+import type { EditorialStatus, Message } from "./types";
 
 export async function fetchMessages(type?: string): Promise<Message[]> {
   try {
@@ -12,10 +12,15 @@ export async function fetchMessages(type?: string): Promise<Message[]> {
   }
 }
 
-export async function fetchMessage(id: string): Promise<Message | null> {
+export async function fetchAdminMessages(accessToken: string): Promise<Message[]> {
+  const data = await fetchJson<{ messages?: Message[] }>("/admin/messages", { headers: getHeaders(accessToken) });
+  return data.messages ?? [];
+}
+
+export async function fetchMessage(id: string, accessToken?: string | null): Promise<Message | null> {
   try {
     const data = await fetchJson<{ message: Message }>(`/messages/${id}`, {
-      headers: getHeaders(),
+      headers: getHeaders(accessToken),
     });
     return data.message;
   } catch (error) {
@@ -63,4 +68,18 @@ export async function deleteMessage(id: string, accessToken: string): Promise<bo
     console.error("Delete message error:", error);
     return false;
   }
+}
+
+export async function transitionMessage(
+  id: string,
+  status: EditorialStatus,
+  accessToken: string,
+  scheduledAt?: string,
+): Promise<Message> {
+  const data = await fetchJson<{ message: Message }>(`/messages/${id}/transitions`, {
+    method: "POST",
+    headers: jsonHeaders(accessToken),
+    body: JSON.stringify({ status, scheduledAt }),
+  });
+  return data.message;
 }

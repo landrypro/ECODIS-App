@@ -9,10 +9,10 @@ export function useAllSeries() {
   });
 }
 
-export function useSeriesDetail(id?: string) {
+export function useSeriesDetail(id?: string, accessToken?: string | null) {
   return useQuery({
-    queryKey: queryKeys.seriesDetail(id),
-    queryFn: () => fetchSeries(id!),
+    queryKey: [...queryKeys.seriesDetail(id), accessToken ? "authenticated" : "public"],
+    queryFn: () => fetchSeries(id!, accessToken),
     enabled: Boolean(id),
   });
 }
