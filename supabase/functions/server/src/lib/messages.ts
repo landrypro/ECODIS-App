@@ -66,6 +66,37 @@ export async function uploadMediaFile(type: "audio" | "video" | "text", mediaFil
   return mediaPath;
 }
 
+export function buildPendingMediaPath(type: "audio" | "video", userId: string, uploadId: string, fileName: string) {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "bin";
+  return `pending/${userId}/${type}/${uploadId}.${ext}`;
+}
+
+export async function finalizeDirectMediaUpload(type: "audio" | "video" | "text", pendingPath: unknown, messageId: string, userId: string) {
+  if (type === "text") return "";
+  if (typeof pendingPath !== "string") {
+    throw new ValidationError("Le fichier media doit etre charge avant la creation du brouillon");
+  }
+
+  const prefix = `pending/${userId}/${type}/`;
+  const fileName = pendingPath.slice(prefix.length);
+  const allowedExtensions = type === "audio" ? "mp3|wav|ogg|m4a|aac" : "mp4|webm|mov";
+  if (!pendingPath.startsWith(prefix) || !new RegExp(`^[0-9a-f-]{36}\\.(${allowedExtensions})$`, "i").test(fileName)) {
+    throw new ValidationError("Chemin de fichier media invalide", 400);
+  }
+
+  const admin = supabaseAdmin();
+  const { data: files, error: listError } = await admin.storage.from(BUCKET_NAME).list(prefix.slice(0, -1), { search: fileName });
+  if (listError) throw listError;
+  if (!files?.some((file: { name: string }) => file.name === fileName)) {
+    throw new ValidationError("Le fichier media charge est introuvable", 404);
+  }
+
+  const mediaPath = `${type}/${messageId}.${fileName.split(".").pop()!.toLowerCase()}`;
+  const { error: moveError } = await admin.storage.from(BUCKET_NAME).move(pendingPath, mediaPath);
+  if (moveError) throw moveError;
+  return mediaPath;
+}
+
 export async function removeMediaFile(mediaPath?: string | null) {
   if (!mediaPath) return;
   await supabaseAdmin().storage.from(BUCKET_NAME).remove([mediaPath]);

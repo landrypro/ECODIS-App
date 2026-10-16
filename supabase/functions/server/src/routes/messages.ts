@@ -1,15 +1,36 @@
 import { Hono } from "npm:hono";
+import { BUCKET_NAME } from "../config.ts";
 import { getAppConfig } from "../lib/app-config.ts";
 import { canEditContent, requireAdmin, requirePermission } from "../lib/auth.ts";
 import { handleApiError, ValidationError } from "../lib/errors.ts";
-import { assertMessageCanBeDeleted, assertMessageExists, attachSignedMediaUrl, fetchSeriesIdsForMessage, removeMediaFile, syncSeriesModuleCounts, uploadMediaFile } from "../lib/messages.ts";
+import { assertMessageCanBeDeleted, assertMessageExists, attachSignedMediaUrl, buildPendingMediaPath, finalizeDirectMediaUpload, fetchSeriesIdsForMessage, removeMediaFile, syncSeriesModuleCounts } from "../lib/messages.ts";
 import { mapMessage as toMessage } from "../lib/mappers.ts";
 import { supabaseAdmin } from "../lib/supabase.ts";
-import { normalizeStringArray, validateBoolean, validateFileForMessage, validateMessageType, validateOptionalString, validateRequiredString } from "../lib/validation.ts";
+import { normalizeStringArray, validateBoolean, validateMediaUploadMetadata, validateMessageType, validateOptionalString, validateRequiredString } from "../lib/validation.ts";
 import { logAudit } from "../lib/audit.ts";
 import { buildEditorialTransition, validateEditorialStatus } from "../domain/editorial.ts";
 
 export const messagesRoutes = new Hono();
+
+messagesRoutes.post("/messages/media-upload-url", async (c) => {
+  try {
+    const { user, error: authError } = await requirePermission(c.req.raw, "content_create_own");
+    if (authError) return c.json({ error: authError }, user ? 403 : 401);
+
+    const body = await c.req.json();
+    const type = validateMessageType(body.type);
+    if (type === "text") throw new ValidationError("Les contenus texte ne necessitent pas de fichier media");
+    const config = await getAppConfig();
+    validateMediaUploadMetadata(type, body.fileName, body.contentType, body.size, config.maxUploadSizeMb);
+
+    const path = buildPendingMediaPath(type, user!.id, crypto.randomUUID(), body.fileName);
+    const { data, error } = await supabaseAdmin().storage.from(BUCKET_NAME).createSignedUploadUrl(path);
+    if (error || !data?.token) throw error ?? new Error("L'URL d'upload n'a pas pu etre creee");
+    return c.json({ upload: { bucket: BUCKET_NAME, path, token: data.token } });
+  } catch (error) {
+    return handleApiError(c, error, "Create media upload URL error");
+  }
+});
 
 messagesRoutes.get("/messages", async (c) => {
   try {
@@ -67,13 +88,12 @@ messagesRoutes.post("/messages", async (c) => {
     const description = validateOptionalString(formData.get("description"), "Description", 2000);
     const duration = validateOptionalString(formData.get("duration"), "Duree", 50);
     const thumbnail = validateOptionalString(formData.get("thumbnail"), "Miniature", 2048);
-    const mediaEntry = formData.get("media");
-    const mediaFile = mediaEntry instanceof File ? mediaEntry : null;
-    const config = await getAppConfig();
-    validateFileForMessage(type, mediaFile, config.maxUploadSizeMb);
+    if (formData.get("media") instanceof File) {
+      throw new ValidationError("Le fichier media doit etre charge directement avant de creer le brouillon", 413);
+    }
 
     const id = crypto.randomUUID();
-    const mediaPath = await uploadMediaFile(type, mediaFile, id);
+    const mediaPath = await finalizeDirectMediaUpload(type, formData.get("mediaPath"), id, user!.id);
     const payload = {
       id,
       type,

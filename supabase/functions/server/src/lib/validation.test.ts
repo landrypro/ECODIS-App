@@ -41,6 +41,9 @@ Deno.test("validation - controle le type de fichier media", () => {
 
   const renamedImage = new File(["image"], "image.mp3", { type: "image/png" });
   assertThrows(() => validation.validateFileForMessage("audio", renamedImage, 1), "MIME autorises");
+
+  validation.validateMediaUploadMetadata("video", "enseignement.mp4", "video/mp4", 109 * 1024 * 1024, 150);
+  assertThrows(() => validation.validateMediaUploadMetadata("video", "enseignement.mp4", "video/mp4", 151 * 1024 * 1024, 150), "taille maximale");
 });
 
 Deno.test("validation - encadre le signalement et la modération", () => {

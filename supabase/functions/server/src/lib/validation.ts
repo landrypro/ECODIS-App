@@ -105,21 +105,29 @@ export function validateModerationAction(value: unknown): "hide" | "restore" | "
   return value;
 }
 
-export function validateFileForMessage(type: "audio" | "video" | "text", mediaFile: File | null, maxUploadSizeMb: number) {
+export function validateMediaUploadMetadata(type: "audio" | "video" | "text", fileName: unknown, contentType: unknown, size: unknown, maxUploadSizeMb: number) {
   if (type === "text") return;
-  if (!mediaFile || mediaFile.size <= 0) {
+  if (typeof fileName !== "string" || typeof contentType !== "string" || !Number.isInteger(size) || size <= 0) {
     throw new ValidationError("Un fichier media est requis pour ce type de message");
   }
   const maxBytes = maxUploadSizeMb * 1024 * 1024;
-  if (mediaFile.size > maxBytes) {
+  if (size > maxBytes) {
     throw new ValidationError(`Le fichier depasse la taille maximale de ${maxUploadSizeMb} Mo`);
   }
-  const extension = mediaFile.name.split(".").pop()?.toLowerCase() ?? "";
+  const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
   const allowed = type === "audio"
     ? new Map([["mp3", ["audio/mpeg", "audio/mp3"]], ["wav", ["audio/wav", "audio/x-wav"]], ["ogg", ["audio/ogg"]], ["m4a", ["audio/mp4", "audio/x-m4a"]], ["aac", ["audio/aac"]]])
     : new Map([["mp4", ["video/mp4"]], ["webm", ["video/webm"]], ["mov", ["video/quicktime"]]]);
   const acceptedMimeTypes = allowed.get(extension);
-  if (!acceptedMimeTypes || !acceptedMimeTypes.includes(mediaFile.type.toLowerCase())) {
+  if (!acceptedMimeTypes || !acceptedMimeTypes.includes(contentType.toLowerCase())) {
     throw new ValidationError(`Le fichier ${type} doit utiliser une extension et un type MIME autorises`);
   }
+}
+
+export function validateFileForMessage(type: "audio" | "video" | "text", mediaFile: File | null, maxUploadSizeMb: number) {
+  if (!mediaFile) {
+    if (type === "text") return;
+    throw new ValidationError("Un fichier media est requis pour ce type de message");
+  }
+  validateMediaUploadMetadata(type, mediaFile.name, mediaFile.type, mediaFile.size, maxUploadSizeMb);
 }
