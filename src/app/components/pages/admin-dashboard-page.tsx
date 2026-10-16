@@ -9,9 +9,12 @@ import {
   fetchSystemHealth, fetchCategories, updateCategories,
   fetchAnnouncements, createAnnouncement, deleteAnnouncement, exportDataAsJson,
   createMessage, updateMessage, createSeries, transitionMessage, transitionSeries,
+  fetchMediaUploadCapabilities,
   AdminStats, AppUser, Message, Series, AppConfig, AuditLog, StorageStats, EditorialStatus,
   SystemHealth, Announcement,
 } from "../api";
+import { compressVideo, estimateCompressedVideoBytes, type VideoCompressionProfile, VideoCompressionError } from "../../services/video-compression-service";
+import type { MediaUploadCapabilities } from "../../services/messages-service";
 import {
   LayoutDashboard, Users, FileText, Settings, Shield, HardDrive, BarChart3,
   Loader2, ShieldOff, Search, Trash2, Save, X, RefreshCw, AlertTriangle,
@@ -760,6 +763,7 @@ function ContentSection({ messages, series, setMessages, setSeries, accessToken,
 // ==================== ADD MESSAGE FORM ====================
 function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCreated: (msg: Message) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const compressionAbortRef = useRef<AbortController | null>(null);
   const [type, setType] = useState<"audio" | "video" | "text">("audio");
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
@@ -767,12 +771,108 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
   const [description, setDescription] = useState("");
   const [duration, setDuration] = useState("");
   const [thumbnail, setThumbnail] = useState("");
+  const [sourceMediaFile, setSourceMediaFile] = useState<File | null>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaCapabilities, setMediaCapabilities] = useState<MediaUploadCapabilities | null>(null);
+  const [compressionProfile, setCompressionProfile] = useState<VideoCompressionProfile | null>(null);
+  const [compressionState, setCompressionState] = useState<"idle" | "preparing" | "compressing" | "verifying" | "ready" | "failed">("idle");
+  const [compressionProgress, setCompressionProgress] = useState(0);
+  const [estimatedCompressedBytes, setEstimatedCompressedBytes] = useState<number | null>(null);
   const [publishing, setPublishing] = useState(false);
 
   useEffect(() => { setCategory(""); }, [type]);
 
-  const canSubmit = title.trim() && author.trim() && category && (type === "text" ? description.trim() : true);
+  useEffect(() => () => compressionAbortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (type !== "video") {
+      setMediaCapabilities(null);
+      return;
+    }
+    let active = true;
+    fetchMediaUploadCapabilities(accessToken)
+      .then((capabilities) => { if (active) setMediaCapabilities(capabilities); })
+      .catch(() => { if (active) setMediaCapabilities(null); });
+    return () => { active = false; };
+  }, [accessToken, type]);
+
+  const effectiveMaxBytes = mediaCapabilities?.limits.effectiveMaxBytes ?? null;
+  const mediaTooLarge = type === "video" && Boolean(mediaFile && effectiveMaxBytes && mediaFile.size > effectiveMaxBytes);
+  const isCompressing = ["preparing", "compressing", "verifying"].includes(compressionState);
+  const waitingForVideoCapabilities = type === "video" && Boolean(sourceMediaFile && !mediaCapabilities);
+  const canSubmit = title.trim() && author.trim() && category && (type === "text" ? description.trim() : true) && !mediaTooLarge && !isCompressing && !waitingForVideoCapabilities;
+
+  useEffect(() => {
+    if (!sourceMediaFile || !effectiveMaxBytes || type !== "video") {
+      setEstimatedCompressedBytes(null);
+      return;
+    }
+    let active = true;
+    estimateCompressedVideoBytes(sourceMediaFile, effectiveMaxBytes, "standard")
+      .then((estimate) => { if (active) setEstimatedCompressedBytes(estimate); })
+      .catch(() => { if (active) setEstimatedCompressedBytes(null); });
+    return () => { active = false; };
+  }, [effectiveMaxBytes, sourceMediaFile, type]);
+
+  const resetVideoSelection = () => {
+    compressionAbortRef.current?.abort();
+    compressionAbortRef.current = null;
+    setSourceMediaFile(null);
+    setMediaFile(null);
+    setCompressionProfile(null);
+    setCompressionState("idle");
+    setCompressionProgress(0);
+    setEstimatedCompressedBytes(null);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const handleMediaSelection = (file: File | null) => {
+    if (!file) return;
+    compressionAbortRef.current?.abort();
+    setSourceMediaFile(file);
+    setMediaFile(file);
+    setCompressionProfile(null);
+    setCompressionState("idle");
+    setCompressionProgress(0);
+    setEstimatedCompressedBytes(null);
+  };
+
+  const handleCompression = async (profile: VideoCompressionProfile) => {
+    if (!sourceMediaFile || !effectiveMaxBytes) return;
+    const controller = new AbortController();
+    compressionAbortRef.current = controller;
+    setCompressionProfile(profile);
+    setCompressionState("preparing");
+    setCompressionProgress(0);
+    try {
+      const compressed = await compressVideo(sourceMediaFile, {
+        maxBytes: effectiveMaxBytes,
+        profile,
+        signal: controller.signal,
+        onProgress: ({ phase, progress }) => {
+          setCompressionState(phase);
+          setCompressionProgress(Math.round(progress * 100));
+        },
+      });
+      setMediaFile(compressed);
+      setCompressionProgress(100);
+      setCompressionState("ready");
+      if (compressed.size > effectiveMaxBytes) {
+        toast.error("La vidéo compressée dépasse encore la limite. Essayez le profil Compact.");
+      } else {
+        toast.success(`Vidéo compressée : ${(compressed.size / 1024 / 1024).toFixed(1)} Mo`);
+      }
+    } catch (error) {
+      if (error instanceof VideoCompressionError && error.code === "cancelled") {
+        setCompressionState("idle");
+      } else {
+        setCompressionState("failed");
+        toast.error(error instanceof Error ? error.message : "Compression impossible");
+      }
+    } finally {
+      if (compressionAbortRef.current === controller) compressionAbortRef.current = null;
+    }
+  };
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -871,14 +971,14 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
       {type !== "text" && (
         <div className="mb-5">
           <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block flex items-center gap-1"><Upload className="w-3 h-3" /> Fichier media ({type})</label>
-          <input ref={fileRef} type="file" accept={type === "audio" ? "audio/*" : "video/*"} onChange={e => setMediaFile(e.target.files?.[0] || null)} className="hidden" />
+          <input ref={fileRef} type="file" accept={type === "audio" ? "audio/*" : "video/*"} onChange={e => handleMediaSelection(e.target.files?.[0] || null)} className="hidden" />
           <button onClick={() => fileRef.current?.click()} className="w-full border-2 border-dashed border-border rounded-xl py-4 hover:border-[#152a6b]/40 hover:bg-[#152a6b]/5 transition-colors flex flex-col items-center gap-2">
             {mediaFile ? (
               <div className="flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-500" />
                 <span className="text-[12px] text-foreground font-medium">{mediaFile.name}</span>
                 <span className="text-[10px] text-muted-foreground">({(mediaFile.size / 1024 / 1024).toFixed(1)} Mo)</span>
-                <button onClick={(e) => { e.stopPropagation(); setMediaFile(null); if (fileRef.current) fileRef.current.value = ""; }} className="ml-2 w-5 h-5 rounded-full bg-red-100 flex items-center justify-center"><X className="w-3 h-3 text-red-600" /></button>
+                <button onClick={(e) => { e.stopPropagation(); resetVideoSelection(); }} className="ml-2 w-5 h-5 rounded-full bg-red-100 flex items-center justify-center"><X className="w-3 h-3 text-red-600" /></button>
               </div>
             ) : (
               <>
@@ -887,6 +987,41 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
               </>
             )}
           </button>
+          {type === "video" && sourceMediaFile && (
+            <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <span className="text-muted-foreground">
+                  {effectiveMaxBytes ? `Limite Storage : ${(effectiveMaxBytes / 1024 / 1024).toFixed(0)} Mo` : "Vérification de la limite Storage..."}
+                </span>
+                {compressionProfile && <span className="font-medium text-[#152a6b]">Version {compressionProfile === "standard" ? "Standard 720p" : "Compact 480p"}</span>}
+              </div>
+              {waitingForVideoCapabilities && <p className="text-[11px] text-amber-700">La limite d’envoi est indisponible. Réessayez dans un instant avant de sauvegarder.</p>}
+              {estimatedCompressedBytes && <p className="text-[11px] text-muted-foreground">Estimation en 720p : environ {(estimatedCompressedBytes / 1024 / 1024).toFixed(1)} Mo.</p>}
+              {mediaTooLarge && <p className="text-[11px] text-amber-700">Cette vidéo dépasse la limite actuelle. Compressez-la avant l’envoi.</p>}
+              {isCompressing && (
+                <>
+                  <div className="h-2 rounded-full bg-slate-200 overflow-hidden" aria-label={`Compression en cours : ${compressionProgress} pour cent`}>
+                    <div className="h-full bg-[#152a6b] transition-all" style={{ width: `${Math.max(4, compressionProgress)}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>{compressionState === "preparing" ? "Préparation..." : compressionState === "verifying" ? "Vérification de la taille..." : `Compression en cours : ${compressionProgress}%`}</span>
+                    <button type="button" onClick={() => compressionAbortRef.current?.abort()} className="font-semibold text-[#9b1b30]">Annuler</button>
+                  </div>
+                </>
+              )}
+              {!isCompressing && mediaCapabilities?.features.videoCompression && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button type="button" onClick={() => handleCompression("standard")} className="px-3 py-1.5 rounded-lg bg-[#152a6b] text-white text-[11px] font-semibold">Compresser en 720p</button>
+                  <button type="button" onClick={() => handleCompression("compact")} className="px-3 py-1.5 rounded-lg border border-border text-[11px] font-semibold">Compresser en 480p</button>
+                  {sourceMediaFile !== mediaFile && effectiveMaxBytes && sourceMediaFile.size <= effectiveMaxBytes && (
+                    <button type="button" onClick={() => { setMediaFile(sourceMediaFile); setCompressionProfile(null); setCompressionState("idle"); }} className="px-3 py-1.5 rounded-lg border border-border text-[11px] font-semibold">Utiliser l’original</button>
+                  )}
+                </div>
+              )}
+              {compressionState === "ready" && mediaTooLarge && <p className="text-[11px] text-red-600">La vidéo compressée dépasse encore la limite. Essayez le profil Compact ou un fichier plus court.</p>}
+              {compressionState === "failed" && <p className="text-[11px] text-red-600">La compression a échoué. Vous pouvez réessayer ou choisir un autre fichier.</p>}
+            </div>
+          )}
         </div>
       )}
 
@@ -895,7 +1030,7 @@ function AddMessageForm({ accessToken, onCreated }: { accessToken: string; onCre
         <button onClick={handleSubmit} disabled={publishing || !canSubmit} className="px-5 py-2.5 bg-[#152a6b] text-white rounded-xl text-[12px] font-semibold flex items-center gap-2 disabled:opacity-50 active:scale-[0.98]">
           {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Enregistrer le brouillon
         </button>
-        {!canSubmit && <p className="text-[10px] text-muted-foreground">Remplissez les champs marques * pour publier</p>}
+        {!canSubmit && <p className="text-[10px] text-muted-foreground">{mediaTooLarge ? "La vidéo doit être compressée sous la limite avant l’envoi." : waitingForVideoCapabilities ? "Vérification de la limite d’envoi en cours." : "Remplissez les champs marqués * pour publier."}</p>}
       </div>
     </Card>
   );

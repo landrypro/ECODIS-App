@@ -1,5 +1,5 @@
 import { Hono } from "npm:hono";
-import { BUCKET_NAME } from "../config.ts";
+import { BUCKET_NAME, STORAGE_MAX_UPLOAD_SIZE_MB, VIDEO_COMPRESSION_ENABLED } from "../config.ts";
 import { getAppConfig } from "../lib/app-config.ts";
 import { canEditContent, requireAdmin, requirePermission } from "../lib/auth.ts";
 import { handleApiError, ValidationError } from "../lib/errors.ts";
@@ -12,6 +12,30 @@ import { buildEditorialTransition, validateEditorialStatus } from "../domain/edi
 
 export const messagesRoutes = new Hono();
 
+function uploadCapabilities(maxUploadSizeMb: number) {
+  const effectiveMaxUploadSizeMb = Math.min(maxUploadSizeMb, STORAGE_MAX_UPLOAD_SIZE_MB);
+  return {
+    limits: {
+      effectiveMaxBytes: effectiveMaxUploadSizeMb * 1024 * 1024,
+      appMaxBytes: maxUploadSizeMb * 1024 * 1024,
+      storageMaxBytes: STORAGE_MAX_UPLOAD_SIZE_MB * 1024 * 1024,
+      allowOriginalUpload: effectiveMaxUploadSizeMb >= maxUploadSizeMb,
+    },
+    features: { videoCompression: VIDEO_COMPRESSION_ENABLED },
+  };
+}
+
+messagesRoutes.get("/messages/media-upload-capabilities", async (c) => {
+  try {
+    const { user, error: authError } = await requirePermission(c.req.raw, "content_create_own");
+    if (authError) return c.json({ error: authError }, user ? 403 : 401);
+    const config = await getAppConfig();
+    return c.json(uploadCapabilities(config.maxUploadSizeMb));
+  } catch (error) {
+    return handleApiError(c, error, "Get media upload capabilities error");
+  }
+});
+
 messagesRoutes.post("/messages/media-upload-url", async (c) => {
   try {
     const { user, error: authError } = await requirePermission(c.req.raw, "content_create_own");
@@ -21,12 +45,13 @@ messagesRoutes.post("/messages/media-upload-url", async (c) => {
     const type = validateMessageType(body.type);
     if (type === "text") throw new ValidationError("Les contenus texte ne necessitent pas de fichier media");
     const config = await getAppConfig();
-    validateMediaUploadMetadata(type, body.fileName, body.contentType, body.size, config.maxUploadSizeMb);
+    const capabilities = uploadCapabilities(config.maxUploadSizeMb);
+    validateMediaUploadMetadata(type, body.fileName, body.contentType, body.size, capabilities.limits.effectiveMaxBytes / (1024 * 1024));
 
     const path = buildPendingMediaPath(type, user!.id, crypto.randomUUID(), body.fileName);
     const { data, error } = await supabaseAdmin().storage.from(BUCKET_NAME).createSignedUploadUrl(path);
     if (error || !data?.token) throw error ?? new Error("L'URL d'upload n'a pas pu etre creee");
-    return c.json({ upload: { bucket: BUCKET_NAME, path, token: data.token } });
+    return c.json({ upload: { bucket: BUCKET_NAME, path, token: data.token }, ...capabilities });
   } catch (error) {
     return handleApiError(c, error, "Create media upload URL error");
   }

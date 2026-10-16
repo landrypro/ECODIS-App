@@ -12,6 +12,14 @@ function toPrefixedRoute(prefix: string): string {
 
 export const API_PREFIX = toPrefixedRoute(getRequiredEnv("APP_API_PREFIX"));
 export const BUCKET_NAME = getRequiredEnv("APP_STORAGE_BUCKET_NAME");
+// This is deliberately independent from the editable application setting. Storage
+// enforces its own project-wide limit (50 MiB on Supabase Free), so the API must
+// never issue an upload URL for a file Storage will reject.
+export const STORAGE_MAX_UPLOAD_SIZE_MB = Math.min(
+  512_000,
+  Math.max(1, Number(Deno.env.get("APP_STORAGE_MAX_UPLOAD_SIZE_MB") ?? "50") || 50),
+);
+export const VIDEO_COMPRESSION_ENABLED = Deno.env.get("APP_VIDEO_COMPRESSION_ENABLED") !== "false";
 export const ALLOWED_ORIGINS = getRequiredEnv("APP_ALLOWED_ORIGINS")
   .split(",")
   .map((origin) => origin.trim())

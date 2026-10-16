@@ -13,6 +13,24 @@ interface SignedMediaUpload {
   token: string;
 }
 
+export interface MediaUploadCapabilities {
+  limits: {
+    effectiveMaxBytes: number;
+    appMaxBytes: number;
+    storageMaxBytes: number;
+    allowOriginalUpload: boolean;
+  };
+  features: {
+    videoCompression: boolean;
+  };
+}
+
+export async function fetchMediaUploadCapabilities(accessToken: string): Promise<MediaUploadCapabilities> {
+  return fetchJson<MediaUploadCapabilities>("/messages/media-upload-capabilities", {
+    headers: getHeaders(accessToken),
+  });
+}
+
 async function uploadMediaDirectly(file: File, type: "audio" | "video", accessToken: string): Promise<string> {
   const { upload } = await fetchJson<{ upload: SignedMediaUpload }>("/messages/media-upload-url", {
     method: "POST",
