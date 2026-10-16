@@ -13,30 +13,20 @@ export async function fetchAdminStats(accessToken: string): Promise<AdminStats |
   }
 }
 
-export async function fetchAppConfig(accessToken: string): Promise<AppConfig | null> {
-  try {
-    const data = await fetchJson<{ config: AppConfig }>("/admin/config", {
-      headers: getHeaders(accessToken),
-    });
-    return data.config;
-  } catch (error) {
-    console.error("Fetch config error:", error);
-    return null;
-  }
+export async function fetchAppConfig(accessToken: string): Promise<AppConfig> {
+  const data = await fetchJson<{ config: AppConfig }>("/admin/config", {
+    headers: getHeaders(accessToken),
+  });
+  return data.config;
 }
 
-export async function updateAppConfig(config: Partial<AppConfig>, accessToken: string): Promise<AppConfig | null> {
-  try {
-    const data = await fetchJson<{ config: AppConfig }>("/admin/config", {
-      method: "PUT",
-      headers: jsonHeaders(accessToken),
-      body: JSON.stringify(config),
-    });
-    return data.config;
-  } catch (error) {
-    console.error("Update config error:", error);
-    throw error;
-  }
+export async function updateAppConfig(config: Partial<AppConfig>, accessToken: string): Promise<AppConfig> {
+  const data = await fetchJson<{ config: AppConfig }>("/admin/config", {
+    method: "PUT",
+    headers: jsonHeaders(accessToken),
+    body: JSON.stringify(config),
+  });
+  return data.config;
 }
 
 export async function fetchAuditLogs(accessToken: string): Promise<AuditLog[]> {

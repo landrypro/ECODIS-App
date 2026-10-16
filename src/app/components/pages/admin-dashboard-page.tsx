@@ -138,6 +138,7 @@ export function AdminDashboardPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [series, setSeries] = useState<Series[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [configLoadError, setConfigLoadError] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const [health, setHealth] = useState<SystemHealth | null>(null);
@@ -148,27 +149,38 @@ export function AdminDashboardPage() {
     if (accessToken && isAdmin) loadAll();
   }, [accessToken, isAdmin]);
 
+  const loadConfig = useCallback(async () => {
+    if (!accessToken) return;
+    setConfigLoadError(null);
+    try {
+      setConfig(await fetchAppConfig(accessToken));
+    } catch (error) {
+      console.error("Load application configuration error:", error);
+      setConfig(null);
+      setConfigLoadError(error instanceof Error ? error.message : "La configuration n'a pas pu être chargée.");
+    }
+  }, [accessToken]);
+
   const loadAll = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [st, us, ms, sr, cf, al, sg, hl, cats, ann] = await Promise.all([
+      const [st, us, ms, sr, al, sg, hl, cats, ann] = await Promise.all([
         fetchAdminStats(accessToken),
         fetchAllUsers(accessToken),
         fetchAdminMessages(accessToken),
         fetchAdminSeries(accessToken),
-        fetchAppConfig(accessToken),
         fetchAuditLogs(accessToken),
         fetchStorageStats(accessToken),
         fetchSystemHealth(accessToken),
         fetchCategories(accessToken),
         fetchAnnouncements(accessToken),
+        loadConfig(),
       ]);
       setStats(st);
       setUsers(us);
       setMessages(ms);
       setSeries(sr);
-      setConfig(cf);
       setAuditLogs(al);
       setStorage(sg);
       setHealth(hl);
@@ -176,9 +188,10 @@ export function AdminDashboardPage() {
       setAnnouncements(ann);
     } catch (e) {
       console.error("Load dashboard error:", e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [accessToken]);
+  }, [accessToken, loadConfig]);
 
   if (authLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
@@ -320,7 +333,7 @@ export function AdminDashboardPage() {
             <>
               {activeSection === "overview" && <OverviewSection stats={stats} users={users} messages={messages} series={series} auditLogs={auditLogs} health={health} navigate={navigate} setActiveSection={setActiveSection} />}
               {activeSection === "content" && <ContentSection messages={messages} series={series} setMessages={setMessages} setSeries={setSeries} accessToken={accessToken!} navigate={navigate} />}
-              {activeSection === "config" && <ConfigSection config={config} setConfig={setConfig} accessToken={accessToken!} />}
+              {activeSection === "config" && <ConfigSection config={config} setConfig={setConfig} accessToken={accessToken!} loadError={configLoadError} onRetry={loadConfig} />}
               {activeSection === "appearance" && <AppearanceSection config={config} setConfig={setConfig} accessToken={accessToken!} />}
               {activeSection === "categories" && <CategoriesSection categories={categories} setCategories={setCategoriesState} messages={messages} accessToken={accessToken!} />}
               {activeSection === "notifications" && <NotificationsSection announcements={announcements} setAnnouncements={setAnnouncements} accessToken={accessToken!} />}
@@ -1112,7 +1125,7 @@ function CreateSeriesForm({ accessToken, messages, onCreated }: { accessToken: s
 }
 
 // ==================== CONFIG ====================
-function ConfigSection({ config, setConfig, accessToken }: { config: AppConfig | null; setConfig: any; accessToken: string }) {
+function ConfigSection({ config, setConfig, accessToken, loadError, onRetry }: { config: AppConfig | null; setConfig: any; accessToken: string; loadError: string | null; onRetry: () => Promise<void> }) {
   const [form, setForm] = useState<Partial<AppConfig>>(config || {});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1126,6 +1139,17 @@ function ConfigSection({ config, setConfig, accessToken }: { config: AppConfig |
       if (updated) { setConfig(updated); setSaved(true); setTimeout(() => setSaved(false), 2000); toast.success("Configuration sauvegardee"); }
     } catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
   };
+
+  if (loadError) {
+    return (
+      <Card className="max-w-3xl p-6 text-center">
+        <AlertTriangle className="w-7 h-7 text-amber-500 mx-auto mb-3" />
+        <h3 className="text-[14px] font-semibold text-foreground">Configuration indisponible</h3>
+        <p className="text-[12px] text-muted-foreground mt-1">{loadError}</p>
+        <button onClick={() => void onRetry()} className="mt-4 px-4 py-2 bg-[#152a6b] text-white rounded-xl text-[12px] font-semibold">Réessayer</button>
+      </Card>
+    );
+  }
 
   if (!config) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
 
