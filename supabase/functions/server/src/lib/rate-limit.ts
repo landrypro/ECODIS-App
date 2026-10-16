@@ -1,4 +1,12 @@
-import { RATE_LIMIT_ADMIN_MAX, RATE_LIMIT_AUTH_MAX, RATE_LIMIT_PUBLIC_MAX, RATE_LIMIT_WINDOW_SECONDS } from "../config.ts";
+import {
+  COMMENT_ACTION_RATE_LIMIT_WINDOW_SECONDS,
+  COMMENT_CREATE_RATE_LIMIT_MAX,
+  COMMENT_REPORT_RATE_LIMIT_MAX,
+  RATE_LIMIT_ADMIN_MAX,
+  RATE_LIMIT_AUTH_MAX,
+  RATE_LIMIT_PUBLIC_MAX,
+  RATE_LIMIT_WINDOW_SECONDS,
+} from "../config.ts";
 import { supabaseAdmin } from "./supabase.ts";
 import { getClientIdentifier, maxForProfile, profileFor, type RateLimitSettings } from "../domain/rate-limit.ts";
 
@@ -33,6 +41,34 @@ export async function checkRateLimit(req: Request, settings: RateLimitSettings =
     throw new Error("Distributed rate limiter returned an invalid response");
   }
 
+  return {
+    allowed: result.allowed,
+    limit,
+    remaining: Number(result.remaining),
+    retryAfterSeconds: Number(result.retry_after_seconds),
+  };
+}
+
+export type CommentActionRateLimitKind = "comment_create" | "comment_report";
+
+/**
+ * Quota fonctionnel par compte. L'identifiant est haché avant persistance et
+ * la clé inclut le type d'action afin que publier et signaler soient deux
+ * fenêtres indépendantes.
+ */
+export async function checkCommentActionRateLimit(userId: string, kind: CommentActionRateLimitKind) {
+  const limit = kind === "comment_create" ? COMMENT_CREATE_RATE_LIMIT_MAX : COMMENT_REPORT_RATE_LIMIT_MAX;
+  const rateKey = await hashIdentifier(`account:${kind}:${userId}`);
+  const { data, error } = await supabaseAdmin().rpc("consume_api_rate_limit", {
+    p_rate_key: rateKey,
+    p_window_seconds: COMMENT_ACTION_RATE_LIMIT_WINDOW_SECONDS,
+    p_max_requests: limit,
+  });
+  if (error) throw new Error(`Comment rate limiter unavailable: ${error.message}`);
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result || typeof result.allowed !== "boolean") {
+    throw new Error("Comment rate limiter returned an invalid response");
+  }
   return {
     allowed: result.allowed,
     limit,

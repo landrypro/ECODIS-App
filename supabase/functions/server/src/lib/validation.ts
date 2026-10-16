@@ -107,7 +107,7 @@ export function validateModerationAction(value: unknown): "hide" | "restore" | "
 
 export function validateMediaUploadMetadata(type: "audio" | "video" | "text", fileName: unknown, contentType: unknown, size: unknown, maxUploadSizeMb: number) {
   if (type === "text") return;
-  if (typeof fileName !== "string" || typeof contentType !== "string" || !Number.isInteger(size) || size <= 0) {
+  if (typeof fileName !== "string" || typeof contentType !== "string" || typeof size !== "number" || !Number.isInteger(size) || size <= 0) {
     throw new ValidationError("Un fichier media est requis pour ce type de message");
   }
   const maxBytes = maxUploadSizeMb * 1024 * 1024;

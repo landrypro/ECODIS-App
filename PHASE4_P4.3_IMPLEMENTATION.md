@@ -1,5 +1,9 @@
 # Phase 4.3 — Modération communautaire
 
+> Statut réévalué le 16 octobre 2026 : ce document décrit l'implémentation initiale, pas une conformité complète. Le lot **P4.3-MC** corrige les écarts constatés ; voir [les spécifications de mise en conformité](P4.3_MISE_EN_CONFORMITE_SPECIFICATIONS.md). MC-A à MC-F sont clôturés localement dans le candidat Git dédié ; la recette MC-G reste à réaliser.
+
+Avancement P4.3-MC : MC-A clôturé ; MC-B (confidentialité) réalisé et contrôlé localement, sans déploiement ; MC-C (intégrité transactionnelle) clôturé localement après le replay intégral des migrations et les contrôles SQL/concurrence ; MC-D (raccordement API) clôturé localement après les tests backend Deno (23/23) et le contrôle HTTP/RPC sur Supabase local ; MC-E (interface) clôturé localement après les tests d'intégration front (7/7) et backend Deno (23/23). Le verrou complet MC-F est vert le 16 octobre 2026 ; voir [son compte rendu](P4.3_MC_F_STABILISATION.md). Le commit dédié qui contient ce document est le candidat ; son SHA est la référence à relever avec `git rev-parse HEAD`. MC-G reste à réaliser.
+
 ## Périmètre réalisé
 
 - Ajout d'un état aux commentaires : `visible`, `hidden`, `deleted_by_author`, `deleted_by_moderation`.
@@ -9,7 +13,7 @@
 - Décisions de modération : masquer, restaurer et supprimer avec motif obligatoire pour masquer ou supprimer.
 - Traitement d'un signalement : résolution automatique lors d'une décision sur le commentaire, ou classement explicite.
 - Journalisation d'audit pour suppression par auteur, signalement et décisions de modération.
-- Interface dédiée accessible depuis le profil d'un modérateur, avec actions masquer, supprimer et écarter.
+- Interface dédiée accessible depuis le profil d'un modérateur, avec recherche, filtres et pagination, contexte interne, historique protégé et actions restaurer, masquer, supprimer ou écarter. Les annulations ne déclenchent aucune mutation et les conflits de version rechargent la file sans rejouer la décision.
 
 ## Modèle de données
 
@@ -34,7 +38,10 @@ Ne pas déployer isolément : appliquer avec les migrations P4.1 et P4.2, puis s
 
 ## Vérifications effectuées dans cet environnement
 
-- `npm run check` : réussi.
+- `npm run typecheck` : réussi après MC-E.
+- `npm run lint` : réussi, sans erreur ; les avertissements existants hors périmètre MC-E sont conservés.
+- `npm run test:integration -- --reporter=verbose` : **7 tests réussis dans 2 fichiers**, le 16 octobre 2026.
+- `wsl -d Ubuntu-24.04 -- bash scripts/test-backend-wsl.sh` : **23 tests réussis, 0 échec**, le 16 octobre 2026.
 - `git diff --check` : aucune erreur d'espacement ; avertissements CRLF préexistants uniquement.
-- Les tests Vitest et le build nécessitent une exécution hors sandbox Windows. Leur lancement a été refusé dans cette session.
-- La distribution WSL est actuellement indisponible depuis cette session Codex ; les contrôles Deno/Supabase restent à exécuter dans votre terminal WSL avant déploiement.
+
+Ces preuves clôturent MC-E localement. Le verrou complet MC-F a ensuite réussi ; voir `P4.3_MC_F_STABILISATION.md`. Elles ne constituent ni un déploiement ni une recette staging ; la recette relève toujours de MC-G.

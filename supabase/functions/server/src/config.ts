@@ -71,6 +71,21 @@ export const RATE_LIMIT_ADMIN_MAX = Math.min(
   300,
   Math.max(5, Number(Deno.env.get("APP_RATE_LIMIT_ADMIN_MAX") ?? "60") || 60),
 );
+// Quotas métier indépendants de la protection générale par IP. Ils restent
+// comptés dans PostgreSQL via consume_api_rate_limit, donc partagés entre les
+// instances Edge Function et jamais exposés au navigateur.
+export const COMMENT_ACTION_RATE_LIMIT_WINDOW_SECONDS = Math.min(
+  3600,
+  Math.max(10, Number(Deno.env.get("APP_COMMENT_ACTION_RATE_LIMIT_WINDOW_SECONDS") ?? "60") || 60),
+);
+export const COMMENT_CREATE_RATE_LIMIT_MAX = Math.min(
+  60,
+  Math.max(1, Number(Deno.env.get("APP_COMMENT_CREATE_RATE_LIMIT_MAX") ?? "5") || 5),
+);
+export const COMMENT_REPORT_RATE_LIMIT_MAX = Math.min(
+  60,
+  Math.max(1, Number(Deno.env.get("APP_COMMENT_REPORT_RATE_LIMIT_MAX") ?? "5") || 5),
+);
 export const INVITATION_RESEND_COOLDOWN_SECONDS = Math.min(
   3600,
   Math.max(30, Number(Deno.env.get("APP_INVITATION_RESEND_COOLDOWN_SECONDS") ?? "60") || 60),

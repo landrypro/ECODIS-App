@@ -45,10 +45,25 @@ export interface Comment {
   messageId: string;
   userId: string;
   userName: string;
-  userEmail: string;
   text: string;
   status: "visible" | "hidden" | "deleted_by_author" | "deleted_by_moderation";
   createdAt: string;
+  /** Présent pour son auteur et les vues internes ; absent du DTO public anonyme. */
+  version?: number;
+}
+
+export interface ModerationComment extends Comment {
+  userEmail: string;
+  version: number;
+  moderatedAt: string | null;
+  moderatedBy: string | null;
+  moderationReason: string;
+}
+
+export interface ModerationQueueComment extends ModerationComment {
+  reportCount: number;
+  openReportCount: number;
+  lastDecisionAt: string | null;
 }
 
 export type CommentReportReason = "spam" | "harassment" | "inappropriate_content" | "misinformation" | "other";
@@ -64,7 +79,48 @@ export interface CommentReport {
   reviewedBy: string | null;
   resolutionNote: string;
   createdAt: string;
-  comment: Comment | null;
+  version: number;
+  comment: ModerationComment | null;
+}
+
+export interface CommentModerationEvent {
+  id: string;
+  commentId: string;
+  reportId: string | null;
+  actorId: string;
+  action: string;
+  previousStatus: string | null;
+  nextStatus: string | null;
+  previousVersion: number | null;
+  nextVersion: number;
+  reason: string;
+  requestId: string;
+  createdAt: string;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export interface ModerationListFilters {
+  authorId?: string;
+  messageId?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  cursor?: string;
+  /** Recherche interne par auteur ou contenu. */
+  search?: string;
+}
+
+export interface ModerationReportFilters extends ModerationListFilters {
+  reportStatus?: CommentReport["status"] | "all";
+}
+
+export interface ModerationCommentFilters extends ModerationListFilters {
+  commentStatus?: Comment["status"] | "all";
 }
 
 export interface Series {

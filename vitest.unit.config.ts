@@ -10,7 +10,9 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     exclude: ["src/**/*.integration.test.ts", "src/**/*.integration.test.tsx"],
-    pool: "threads",
+    // Même contrainte Windows que les intégrations : un unique fork évite les
+    // échecs de création de worker sans réduire le périmètre des tests.
+    pool: "forks",
     maxWorkers: 1,
     isolate: false,
     clearMocks: true,

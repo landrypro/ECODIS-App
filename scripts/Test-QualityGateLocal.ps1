@@ -10,12 +10,14 @@ param(
 
 <#
 .SYNOPSIS
-    Exécute le verrou technique P4.2.2-E depuis PowerShell.
+    Exécute le verrou technique local P4.2.2-E et P4.3-MC-F depuis PowerShell.
 
 .DESCRIPTION
     Le mode standard vérifie le frontend, le lockfile, l'audit de production,
     les tests backend Deno sous WSL et les E2E. Les contrôles Supabase locaux
-    sont opt-in car "supabase db reset --local" réinitialise les données locales.
+    sont opt-in car ils réinitialisent les données locales. En plus du replay,
+    du lint et de l'historique des migrations, ils exécutent les preuves P4.3 :
+    intégrité/concurrence PostgreSQL MC-C et HTTP/RPC réel MC-D.
 
     Usage complet :
       .\scripts\Test-QualityGateLocal.ps1 -RunLocalDatabaseChecks
@@ -199,16 +201,20 @@ function Invoke-WslBash {
     $bashProjectRoot = ConvertTo-BashLiteral -Value $wslProjectRoot
     $bashCommand = "cd $bashProjectRoot && $Command"
 
+    # Deno et Supabase écrivent leurs messages de progression sur stderr. Ne
+    # les redirigeons pas vers le flux d'erreur PowerShell : avec
+    # $ErrorActionPreference='Stop', un simple « Check … » ou « Starting
+    # database… » serait alors interprété à tort comme une exception.
     if ($SuppressOutput) {
-        & wsl.exe --distribution $distribution --exec bash -lc $bashCommand 2>&1 | Out-Null
+        & wsl.exe --distribution $distribution --exec bash -lc $bashCommand *> $null
     }
     else {
         & wsl.exe --distribution $distribution --exec bash -lc $bashCommand
     }
-
     $exitCode = $LASTEXITCODE
+
     if ($exitCode -ne 0) {
-        throw "La commande WSL a retourné le code $exitCode."
+        throw "La commande WSL a retourné le code $exitCode. Consultez la sortie affichée juste avant ce résumé."
     }
 }
 
@@ -255,7 +261,8 @@ try {
         Write-Host '3. TypeScript, ESLint, tests unitaires et intégration'
         Write-Host '4. Build, E2E, audit production et arbre ciblé npm'
         Write-Host '5. Deno check/tests sous WSL (Ubuntu-24.04 automatiquement, ou -WslDistribution)'
-        Write-Host '6. Avec -RunLocalDatabaseChecks : cycle Supabase unique sous WSL (start, attente Docker healthy, reset, lint, migrations, stop)'
+        Write-Host '6. Avec -RunLocalDatabaseChecks : cycle PostgreSQL Supabase sous WSL (db start, attente Docker healthy, reset, lint, migrations, stop)'
+        Write-Host '7. Avec -RunLocalDatabaseChecks : intégrité PostgreSQL MC-C et HTTP/RPC Supabase local MC-D'
         exit 0
     }
 
@@ -265,7 +272,11 @@ try {
         Add-SkippedStep -Name 'Installation propre depuis le lockfile' -Reason 'Option -SkipInstall demandée.'
     }
     else {
-        Invoke-QualityStep -Name 'Installation propre depuis le lockfile' -Action { Invoke-Npm -NpmArguments @('ci') }
+        # L'audit exécuté implicitement par npm ci dépend du registre et répète
+        # le contrôle de production explicite ci-dessous. L'installation reste
+        # strictement déterminée par le lockfile ; l'audit production demeure
+        # obligatoire à l'étape dédiée du verrou.
+        Invoke-QualityStep -Name 'Installation propre depuis le lockfile' -Action { Invoke-Npm -NpmArguments @('ci', '--no-audit', '--fund=false') }
     }
 
     Invoke-QualityStep -Name 'TypeScript' -Action { Invoke-Npm -NpmArguments @('run', 'typecheck') }
@@ -299,6 +310,14 @@ try {
             # deux invocations successives peuvent faire perdre au reset le
             # démarrage Docker déclenché par la première.
             Invoke-WslBash -Command 'bash scripts/test-supabase-local-wsl.sh'
+        }
+        Invoke-QualityStep -Name 'Intégrité PostgreSQL MC-C' -Action {
+            Invoke-WslBash -Command 'bash scripts/test-moderation-integrity-wsl.sh'
+        }
+        Invoke-QualityStep -Name 'API HTTP/RPC Supabase local MC-D' -Action {
+            # Ce scénario recrée exclusivement la pile Supabase locale du projet
+            # et ne cible jamais le projet distant ou un environnement staging.
+            Invoke-WslBash -Command 'MC_D_CONFIRM_LOCAL_RESET=yes bash scripts/test-moderation-api-local-wsl.sh'
         }
     }
     else {

@@ -25,7 +25,8 @@ export function useCommentMutations(messageId: string, accessToken?: string | nu
       onSuccess: refresh,
     }),
     deleteMutation: useMutation({
-      mutationFn: (commentId: string) => deleteComment(messageId, commentId, accessToken!),
+      mutationFn: ({ commentId, expectedVersion }: { commentId: string; expectedVersion: number }) =>
+        deleteComment(messageId, commentId, expectedVersion, accessToken!),
       onSuccess: refresh,
     }),
     reportMutation: useMutation({

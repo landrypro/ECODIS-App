@@ -1,5 +1,23 @@
 import { fetchJson, getHeaders, jsonHeaders } from "./http";
-import type { Comment, CommentReport, CommentReportReason } from "./types";
+import type {
+  Comment,
+  CommentModerationEvent,
+  CommentReport,
+  CommentReportReason,
+  ModerationCommentFilters,
+  ModerationQueueComment,
+  ModerationReportFilters,
+  PaginatedResult,
+} from "./types";
+
+function moderationQuery(filters: object): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if ((typeof value === "string" || typeof value === "number") && value !== "") params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
 
 export async function fetchComments(messageId: string): Promise<Comment[]> {
   try {
@@ -27,9 +45,9 @@ export async function addComment(messageId: string, text: string, accessToken: s
   }
 }
 
-export async function deleteComment(messageId: string, commentId: string, accessToken: string): Promise<boolean> {
+export async function deleteComment(messageId: string, commentId: string, expectedVersion: number, accessToken: string): Promise<boolean> {
   try {
-    const data = await fetchJson<{ success: boolean }>(`/comments/${messageId}/${commentId}`, {
+    const data = await fetchJson<{ success: boolean }>(`/comments/${messageId}/${commentId}?expectedVersion=${encodeURIComponent(expectedVersion)}`, {
       method: "DELETE",
       headers: getHeaders(accessToken),
     });
@@ -56,24 +74,33 @@ export async function reportComment(
 
 export async function fetchModerationReports(
   accessToken: string,
-  status: CommentReport["status"] = "open",
-): Promise<CommentReport[]> {
-  const data = await fetchJson<{ reports?: CommentReport[] }>(`/moderation/reports?status=${status}`, {
+  filters: ModerationReportFilters = {},
+): Promise<PaginatedResult<CommentReport>> {
+  return fetchJson<PaginatedResult<CommentReport>>(`/moderation/reports${moderationQuery({
+    reportStatus: filters.reportStatus ?? "open",
+    authorId: filters.authorId,
+    messageId: filters.messageId,
+    from: filters.from,
+    to: filters.to,
+    limit: filters.limit,
+    cursor: filters.cursor,
+    search: filters.search,
+  })}`, {
     headers: getHeaders(accessToken),
   });
-  return data.reports ?? [];
 }
 
 export async function moderateComment(
   commentId: string,
   action: "hide" | "restore" | "delete",
   reason: string,
+  expectedVersion: number,
   accessToken: string,
 ): Promise<Comment> {
   const data = await fetchJson<{ comment: Comment }>(`/moderation/comments/${commentId}`, {
     method: "PUT",
     headers: jsonHeaders(accessToken),
-    body: JSON.stringify({ action, reason }),
+    body: JSON.stringify({ action, reason, expectedVersion }),
   });
   return data.comment;
 }
@@ -82,14 +109,37 @@ export async function resolveCommentReport(
   reportId: string,
   status: "resolved" | "dismissed",
   note: string,
+  expectedVersion: number,
   accessToken: string,
 ): Promise<CommentReport> {
   const data = await fetchJson<{ report: CommentReport }>(`/moderation/reports/${reportId}`, {
     method: "PUT",
     headers: jsonHeaders(accessToken),
-    body: JSON.stringify({ status, note }),
+    body: JSON.stringify({ status, note, expectedVersion }),
   });
   return data.report;
+}
+
+export async function fetchModerationComments(
+  accessToken: string,
+  filters: ModerationCommentFilters | string = {},
+): Promise<PaginatedResult<ModerationQueueComment>> {
+  const query = typeof filters === "string"
+    ? (filters ? `?${filters}` : "")
+    : moderationQuery(filters);
+  return fetchJson<PaginatedResult<ModerationQueueComment>>(`/moderation/comments${query}`, {
+    headers: getHeaders(accessToken),
+  });
+}
+
+export async function fetchCommentModerationEvents(
+  commentId: string,
+  accessToken: string,
+  query = "",
+): Promise<PaginatedResult<CommentModerationEvent>> {
+  return fetchJson<PaginatedResult<CommentModerationEvent>>(`/moderation/comments/${commentId}/events${query ? `?${query}` : ""}`, {
+    headers: getHeaders(accessToken),
+  });
 }
 
 export async function fetchCommentCounts(): Promise<Record<string, number>> {

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "./auth-context";
 import { useCommentMutations, useComments } from "../hooks/use-comments";
 import { Flag, MessageCircle, Send, Trash2, Loader2, LogIn } from "lucide-react";
-import type { CommentReportReason } from "../services";
+import type { Comment, CommentReportReason } from "../services";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -34,11 +34,12 @@ export function CommentsSection({ messageId }: CommentsSectionProps) {
     }
   };
 
-  const handleDelete = async (commentId: string) => {
+  const handleDelete = async (comment: Comment) => {
     if (!accessToken) return;
+    if (!comment.version) { toast.error("Ce commentaire doit être actualisé avant suppression."); return; }
     if (!navigator.onLine) { toast.error("La suppression d'un commentaire necessite une connexion."); return; }
     try {
-      await deleteMutation.mutateAsync(commentId);
+      await deleteMutation.mutateAsync({ commentId: comment.id, expectedVersion: comment.version });
       toast.success("Commentaire supprime");
     } catch (error: any) {
       toast.error(error.message || "Erreur lors de la suppression");
@@ -168,7 +169,7 @@ export function CommentsSection({ messageId }: CommentsSectionProps) {
         <div className="space-y-4">
           {comments.map((comment) => {
             const canDelete = Boolean(user && comment.userId === user.id);
-            const isDeleting = deleteMutation.isPending && deleteMutation.variables === comment.id;
+            const isDeleting = deleteMutation.isPending && deleteMutation.variables?.commentId === comment.id;
             const isReporting = reportMutation.isPending && reportMutation.variables?.commentId === comment.id;
             return (
               <div key={comment.id} className="flex gap-2.5">
@@ -185,7 +186,7 @@ export function CommentsSection({ messageId }: CommentsSectionProps) {
                   </div>
                   {canDelete && (
                     <button
-                      onClick={() => handleDelete(comment.id)}
+                      onClick={() => handleDelete(comment)}
                       disabled={isDeleting}
                       className="flex items-center gap-1 mt-1 ml-2 text-[11px] text-muted-foreground hover:text-[#9b1b30] transition-colors"
                     >

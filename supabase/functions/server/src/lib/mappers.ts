@@ -20,17 +20,33 @@ export function mapMessage(row: any) {
   };
 }
 
+// Public allowlist: never spread a database row into a public response.
 export function mapComment(row: any) {
   return {
     id: row.id,
     messageId: row.message_id,
     userId: row.user_id,
     userName: row.user_name,
-    userEmail: row.user_email,
     text: row.text,
     status: row.status ?? "visible",
     createdAt: row.created_at,
   };
+}
+
+// Reserved for permission-protected moderation responses.
+export function mapModerationComment(row: any) {
+  return {
+    ...mapComment(row),
+    userEmail: row.user_email ?? "",
+    version: row.version ?? 1,
+    moderatedAt: row.moderated_at ?? null,
+    moderatedBy: row.moderated_by ?? null,
+    moderationReason: row.moderation_reason ?? "",
+  };
+}
+
+export function mapOwnerComment(row: any) {
+  return { ...mapComment(row), version: row.version ?? 1 };
 }
 
 export function mapCommentReport(row: any) {
@@ -45,7 +61,25 @@ export function mapCommentReport(row: any) {
     reviewedBy: row.reviewed_by ?? null,
     resolutionNote: row.resolution_note ?? "",
     createdAt: row.created_at,
-    comment: row.comments ? mapComment(row.comments) : null,
+    version: row.version ?? 1,
+    comment: row.comments ? mapModerationComment(row.comments) : null,
+  };
+}
+
+export function mapModerationEvent(row: any) {
+  return {
+    id: row.id,
+    commentId: row.comment_id,
+    reportId: row.report_id ?? null,
+    actorId: row.actor_id,
+    action: row.action,
+    previousStatus: row.previous_status ?? null,
+    nextStatus: row.next_status ?? null,
+    previousVersion: row.previous_version ?? null,
+    nextVersion: row.next_version,
+    reason: row.reason ?? "",
+    requestId: row.request_id,
+    createdAt: row.created_at,
   };
 }
 
